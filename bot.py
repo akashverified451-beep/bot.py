@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
-DATABASE_URL = os.getenv("postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db") # Connected directly to Render PostgreSQL
+DATABASE_URL = os.getenv("postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db") 
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -22,67 +22,82 @@ class AddNumberState(StatesGroup):
     waiting_for_data = State()
 
 def get_db_connection():
+    """Establishes an isolated bridge line with the Render PostgreSQL engine."""
     return psycopg.connect(DATABASE_URL)
 
 def init_db():
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    uid BIGINT PRIMARY KEY, 
-                    balance NUMERIC(10, 2) DEFAULT 0.00, 
-                    join_date TEXT,
-                    screenshot_state BOOLEAN DEFAULT FALSE
-                )
-            """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS available_accounts (
-                    id SERIAL PRIMARY KEY,
-                    country_id TEXT,
-                    phone_number TEXT UNIQUE,
-                    api_id TEXT,
-                    api_hash TEXT,
-                    string_session TEXT,
-                    is_sold BOOLEAN DEFAULT FALSE
-                )
-            """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS active_orders (
-                    uid BIGINT PRIMARY KEY,
-                    account_id INTEGER,
-                    phone_number TEXT,
-                    country_name TEXT,
-                    cost_inr NUMERIC(10, 2),
-                    status TEXT DEFAULT 'WAITING',
-                    timestamp TEXT
-                )
-            """)
-            conn.commit()
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        uid BIGINT PRIMARY KEY, 
+                        balance NUMERIC(10, 2) DEFAULT 0.00, 
+                        join_date TEXT,
+                        screenshot_state BOOLEAN DEFAULT FALSE
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS available_accounts (
+                        id SERIAL PRIMARY KEY,
+                        country_id TEXT,
+                        phone_number TEXT UNIQUE,
+                        api_id TEXT,
+                        api_hash TEXT,
+                        string_session TEXT,
+                        is_sold BOOLEAN DEFAULT FALSE
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS active_orders (
+                        uid BIGINT,
+                        account_id INTEGER,
+                        phone_number TEXT,
+                        country_name TEXT,
+                        cost_inr NUMERIC(10, 2),
+                        status TEXT DEFAULT 'WAITING',
+                        timestamp TEXT
+                    )
+                """)
+                conn.commit()
+                logging.info("Database initialization completed successfully.")
+    except Exception as db_err:
+        logging.critical(f"CRITICAL: Failed to initialize schema layout: {db_err}")
 
 def get_stock_count(country_id):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) FROM available_accounts WHERE country_id = %s AND is_sold = FALSE", (country_id,))
-                return cur.fetchone()[0]
-    except Exception:
+                row = cur.fetchone()
+                # FIXED: Unpack the first index from the tuple structure safely
+                return row[0] if row else 0
+    except Exception as e:
+        logging.error(f"Error fetching stock count target: {e}")
         return 0
 
 def get_user_bal(uid):
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
-            row = cur.fetchone()
-            return row[0] if row else 0.00
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
+                row = cur.fetchone()
+                # FIXED: Extract tuple numeric value safely
+                return float(row[0]) if row else 0.00
+    except Exception as e:
+        logging.error(f"Error extracting user balance profile item: {e}")
+        return 0.00
 
 def get_user_jd(uid):
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT join_date FROM users WHERE uid = %s", (uid,))
-            row = cur.fetchone()
-            return row[0] if row else "N/A"
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT join_date FROM users WHERE uid = %s", (uid,))
+                row = cur.fetchone()
+                return row[0] if row else "N/A"
+    except Exception:
+        return "N/A"
 
-# Core Configuration Mapping Matrix
 COUNTRY_SERVICES = [
     {"id": "colombia", "name": "Colombia", "flag": "🇨🇴", "price": 36.29},
     {"id": "nigeria", "name": "Nigeria", "flag": "🇳🇬", "price": 36.29},
@@ -118,13 +133,16 @@ def generate_services_keyboard() -> InlineKeyboardMarkup:
 @dp.message(CommandStart())
 async def cmd_start(msg: Message):
     uid = msg.from_user.id
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
-            if not cur.fetchone():
-                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                cur.execute("INSERT INTO users (uid, balance, join_date) VALUES (%s, 0.00, %s)", (uid, now))
-                conn.commit()
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
+                if not cur.fetchone():
+                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    cur.execute("INSERT INTO users (uid, balance, join_date) VALUES (%s, 0.00, %s)", (uid, now))
+                    conn.commit()
+    except Exception as e:
+        logging.error(f"Error on command start loop registration: {e}")
     await msg.answer("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", reply_markup=main_kb())
 
 @dp.message(F.text == "🛍️ Buy Telegram Account")
@@ -150,7 +168,10 @@ async def show_confirmation_screen(cb: CallbackQuery):
         f"💰 <b>Price:</b> ₹{country['price']}\n"
         f"📦 <b>Stock:</b> {stock}"
     )
-    await cb.message.edit_text(text=confirmation_text, reply_markup=confirm_kb, parse_mode="HTML")
+    try:
+        await cb.message.edit_text(text=confirmation_text, reply_markup=confirm_kb, parse_mode="HTML")
+    except Exception as view_err:
+        logging.error(f"FSM Layout rendering parsing failure exception: {view_err}")
 
 @dp.callback_query(F.data.startswith("conf_buy_"))
 async def execute_internal_purchase(cb: CallbackQuery):
@@ -162,46 +183,26 @@ async def execute_internal_purchase(cb: CallbackQuery):
     if user_balance < country["price"]:
         return await cb.message.edit_text(text=f"❌ <b>Transaction Declined</b>\n\nYour balance (₹{user_balance}) is too low. This item costs ₹{country['price']}.")
 
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, phone_number FROM available_accounts WHERE country_id = %s AND is_sold = FALSE LIMIT 1 FOR UPDATE", (country_id,))
-            account = cur.fetchone()
-            if not account:
-                return await cb.message.edit_text("❌ <b>Out of Stock!</b>")
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, phone_number FROM available_accounts WHERE country_id = %s AND is_sold = FALSE LIMIT 1 FOR UPDATE", (country_id,))
+                account = cur.fetchone()
+                if not account:
+                    return await cb.message.edit_text("❌ <b>Out of Stock!</b>")
+                    
+                account_id, phone_number = account
+                cur.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (country["price"], uid))
+                cur.execute("UPDATE available_accounts SET is_sold = TRUE WHERE id = %s", (account_id,))
+                cur.execute("INSERT INTO active_orders (uid, account_id, phone_number, country_name, cost_inr, status, timestamp) VALUES (%s, %s, %s, %s, %s, 'WAITING', %s)", (uid, account_id, phone_number, country["name"], country["price"], datetime.now().isoformat()))
+                conn.commit()
                 
-            account_id, phone_number = account
-            cur.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (country["price"], uid))
-            cur.execute("UPDATE available_accounts SET is_sold = TRUE WHERE id = %s", (account_id,))
-            cur.execute("INSERT INTO active_orders (uid, account_id, phone_number, country_name, cost_inr, status, timestamp) VALUES (%s, %s, %s, %s, %s, 'WAITING', %s)", (uid, account_id, phone_number, country["name"], country["price"], datetime.now().isoformat()))
-            conn.commit()
-            
-    await cb.message.edit_text(text=f"📱 <b>Your Number is Reserved!</b>\n\n🌍 <b>Country:</b> {country['name']} {country['flag']}\n🔢 <b>Number:</b> <code>{phone_number}</code>\n\n👉 Enter this number in Telegram app now. Code will arrive here automatically.", parse_mode="HTML")
+        await cb.message.edit_text(text=f"📱 <b>Your Number is Reserved!</b>\n\n🌍 <b>Country:</b> {country['name']} {country['flag']}\n🔢 <b>Number:</b> <code>{phone_number}</code>\n\n👉 Enter this number in Telegram app now. Code will arrive here automatically.", parse_mode="HTML")
+    except Exception as purchase_err:
+        logging.error(f"Purchase transaction failed: {purchase_err}")
+        await cb.message.edit_text("❌ An error occurred while processing your connection request block.")
 
-# --- ADMIN PANEL MANAGEMENT ENGINE ---
 @dp.message(Command("addnumber"))
 async def start_add_number(msg: Message, state: FSMContext):
     if msg.from_user.id != ADMIN_TELEGRAM_ID: return
     await msg.answer("📥 Format: <code>country_id | phone_number | api_id | api_hash | string_session</code>", parse_mode="HTML")
-    await state.set_state(AddNumberState.waiting_for_data)
-
-@dp.message(AddNumberState.waiting_for_data)
-async def process_number_data(msg: Message, state: FSMContext):
-    parts = [p.strip() for p in msg.text.split("|")]
-    if len(parts) != 5: return await msg.answer("❌ Format Error. Use | separator.")
-    country_id, phone, api_id, api_hash, session_str = parts
-    
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("INSERT INTO available_accounts (country_id, phone_number, api_id, api_hash, string_session) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (phone_number) DO UPDATE SET string_session = EXCLUDED.string_session, is_sold = FALSE", (country_id.lower(), phone, api_id, api_hash, session_str))
-            conn.commit()
-    await msg.answer("✅ Account added successfully.")
-    await state.clear()
-
-@dp.message(Command("checkstock"))
-async def admin_check_stock_handler(msg: Message):
-    if msg.from_user.id != ADMIN_TELEGRAM_ID: return
-    lines = ["📊 <b>Stock Inventory:</b>"]
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            for co in COUNTRY_SERVICES:
-                cur.execute("SELECT COUNT(*) FROM available_accounts WHERE country_id = %s AND is_sold = FALSE", (co["id"],))

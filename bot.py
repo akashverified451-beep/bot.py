@@ -138,21 +138,20 @@ async def cmd_start(msg: Message):
     except Exception as e:
         logging.error(f"Registration failure hook: {e}")
         
-    welcome_text = (
-        f"👑 <b>WELCOME TO SKY CLOUD OTP SERVICES</b> 👑\n"
-        f"────────────────────────────────\n"
-        f"⚡ <i>Passive, automated 24/7 activation server protocols.</i>\n\n"
-        f"📦 Use the interactive console board below to manage your inventory channels instantly."
-    )
+    welcome_text = """👑 <b>WELCOME TO SKY CLOUD OTP SERVICES</b> 👑
+────────────────────────────────
+⚡ <i>Passive, automated 24/7 activation server protocols.</i>
+
+📦 Use the interactive console board below to manage your inventory channels instantly."""
+    
     await msg.answer(text=welcome_text, reply_markup=main_kb(), parse_mode="HTML")
 
 @dp.message(F.text == "⚡ INSTANT SMS STORE ⚡")
 async def show_tg_services(msg: Message):
-    store_text = (
-        f"🛒 <b>LIVE INVENTORY ACTIVATION HUB</b>\n"
-        f"────────────────────────────────\n"
-        f"💡 Select your preferred localized zone channel reference parameters from the visual data matrix grid list below:"
-    )
+    store_text = """🛒 <b>LIVE INVENTORY ACTIVATION HUB</b>
+────────────────────────────────
+💡 Select your preferred localized zone channel reference parameters from the visual data matrix grid list below:"""
+    
     await msg.answer(text=store_text, reply_markup=generate_services_keyboard(), parse_mode="HTML")
 
 @dp.callback_query(F.data.startswith("select_co_"))
@@ -168,15 +167,16 @@ async def show_confirmation_screen(cb: CallbackQuery):
         [InlineKeyboardButton(text="❌ ABORT PURSUIT", callback_data="cancel_action")]
     ])
     
-    confirmation_text = (
-        f"📋 <b>DIGITAL INVENTORY REVIEW INVOICE</b>\n"
-        f"────────────────────────────────\n"
-        f"👋 Hello buyer, checking current server node paths. Confirm your purchase reservation metrics details below:\n\n"
-        f"🌍 <b>Target Country:</b> {country['flag']} {country['name']}\n"
-        f"💸 <b>Service Cost:</b> <code>₹{country['price']}</code>\n"
-        f"📦 <b>Node Stock:</b> <code>{stock} channels active</code>\n\n"
-        f"⚠️ <i>Funds are securely deducted only upon successful OTP receipt callback validation rules.</i>"
-    )
+    confirmation_text = f"""📋 <b>DIGITAL INVENTORY REVIEW INVOICE</b>
+────────────────────────────────
+👋 Hello buyer, checking current server node paths. Confirm your purchase reservation metrics details below:
+
+🌍 <b>Target Country:</b> {country['flag']} {country['name']}
+💸 <b>Service Cost:</b> <b>₹{country['price']}</b>
+📦 <b>Node Stock:</b> <b>{stock} channels active</b>
+
+⚠️ <i>Funds are securely deducted only upon successful OTP receipt callback validation rules.</i>"""
+
     await cb.message.edit_text(text=confirmation_text, reply_markup=confirm_kb, parse_mode="HTML")
 
 @dp.callback_query(F.data.startswith("conf_buy_"))
@@ -187,13 +187,12 @@ async def execute_internal_purchase(cb: CallbackQuery):
     
     user_balance = get_user_bal(uid)
     if user_balance < country["price"]:
-        decline_text = (
-            f"❌ <b>TRANSACTION ATTEMPT REJECTED</b>\n"
-            f"────────────────────────────────\n"
-            f"💰 Your balance (<b>₹{user_balance}</b>) is too low.\n"
-            f"🏷️ This profile purchase block requires: <b>₹{country['price']}</b>\n\n"
-            f"👉 Please use the 💳 <b>MY WALLET</b> dashboard to add credit instantly."
-        )
+        decline_text = f"""❌ <b>TRANSACTION ATTEMPT REJECTED</b>
+────────────────────────────────
+💰 Your balance (<b>₹{user_balance}</b>) is too low.
+🏷️ This profile purchase block requires: <b>₹{country['price']}</b>
+
+👉 Please use the wallet panel to add credit instantly."""
         return await cb.message.edit_text(text=decline_text, parse_mode="HTML")
 
     try:
@@ -211,6 +210,11 @@ async def execute_internal_purchase(cb: CallbackQuery):
                 cur.execute("INSERT INTO active_orders (uid, account_id, phone_number, country_name, cost_inr, status, timestamp) VALUES (%s, %s, %s, %s, %s, 'WAITING', %s)", (uid, account_id, phone_number, country["name"], country["price"], datetime.now().isoformat()))
                 conn.commit()
                 
-        allocated_text = (
-            f"📱 <b>VIRTUAL SYSTEM RESERVATION COMPLETE</b>\n"
-            f"────────────────────────────────\n"
+        allocated_text = f"""📱 <b>VIRTUAL SYSTEM RESERVATION COMPLETE</b>
+────────────────────────────────
+🌍 <b>Country Node:</b> {country['name']} {country['flag']}
+🔢 <b>Allocated Line:</b> <code>{phone_number}</code>
+💳 <b>Charged Amount:</b> ₹{country['price']}
+
+👉 Copy-paste this phone number into your Telegram Client app now. The backend data streaming scraper is waiting for your verification code loop..."""
+        

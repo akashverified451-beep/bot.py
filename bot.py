@@ -233,4 +233,3 @@ async def process_admin_amount_entry(message: Message, state: FSMContext):
 # FIXED: Completed the try/except block structure completely to fix the SyntaxError
 @dp.callback_query(F.data == "cancel_payment")
 async def handle_cancel_payment(callback: CallbackQuery):
-    try:

@@ -79,7 +79,7 @@ async def command_start_handler(message: Message):
     register_user(message.from_user.id)
     await message.answer("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", reply_markup=get_main_keyboard())
 
-# --- ADMIN INPUT CAPTURE (Placed strictly first to isolate text capture) ---
+# --- ADMIN INPUT CAPTURE ---
 @dp.message(AdminStates.waiting_for_admin_amount)
 async def process_admin_amount_entry(message: Message, state: FSMContext):
     if message.from_user.id != ADMIN_TELEGRAM_ID:
@@ -111,8 +111,8 @@ async def process_admin_amount_entry(message: Message, state: FSMContext):
     
     try:
         await bot.edit_message_text(chat_id=ADMIN_TELEGRAM_ID, message_id=old_msg_id, text=f"✅ Approved & added ₹{credit_amount} for <code>{target_uid}</code>.", parse_mode="HTML")
-    except Exception:
-        pass
+    except Exception as err:
+        logging.error(f"Failed to edit admin message: {err}")
     
     customer_receipt = (
         f"✅ <b>Payment Confirmed!</b>\n\n"
@@ -125,8 +125,8 @@ async def process_admin_amount_entry(message: Message, state: FSMContext):
     
     try:
         await bot.send_message(chat_id=target_uid, text=customer_receipt, parse_mode="HTML")
-    except Exception:
-        pass
+    except Exception as err:
+        logging.error(f"Failed to send customer receipt: {err}")
 
 # --- STANDARD USER INTERFACE HANDLERS ---
 @dp.message(StateFilter(None), F.text == "💼 Wallet")
@@ -194,7 +194,10 @@ async def process_add_funds_text(message: Message, state: FSMContext):
 # --- INLINE INTERACTIVE BUTTON CALLBACKS ---
 @dp.callback_query(F.data.startswith("req_"))
 async def handle_user_verification_request(callback: CallbackQuery):
-    _, uid, txn_id = callback.data.split("_")
+    data_parts = callback.data.split("_")
+    uid = data_parts[1]
+    txn_id = data_parts[2]
+    
     await callback.answer("⏳ Verification request sent to admin! Please wait.", show_alert=True)
     await callback.message.edit_caption(
         caption=f"⏳ <b>Verification Request Sent</b>\n\nThe admin is verifying your transaction. Your balance updates automatically following verification.", 
@@ -224,5 +227,3 @@ async def handle_admin_decision(callback: CallbackQuery, state: FSMContext):
         await bot.send_message(chat_id=ADMIN_TELEGRAM_ID, text=f"💬 Please type the exact amount (in whole numbers) to credit user <code>{target_uid}</code>:", parse_mode="HTML")
         
     elif action == "deny":
-        await callback.message.edit_text(text=f"❌ Denied request from user <code>{target_uid}</code>.", parse_mode="HTML")
-        try:

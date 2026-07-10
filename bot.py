@@ -17,7 +17,9 @@ ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
 
+# Dictionaries to track claim states safely without crashing FSM Context
 pending_claims = {}
+user_screenshot_state = {}
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
@@ -83,9 +85,6 @@ async def add_funds_handler(msg: Message):
     uid = msg.from_user.id
     txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
     
-    claim_id = str(random.randint(1000, 9999))
-    pending_claims[claim_id] = {"uid": uid, "txn": txn, "session_amt": 0}
-    
     img = qrcode.make(f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR")
     buf = io.BytesIO()
     img.save(buf, format='PNG')
@@ -93,23 +92,40 @@ async def add_funds_handler(msg: Message):
     
     cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay <b>any amount</b> you wish to add to your wallet.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Check Payment Status", callback_data=f"req:{claim_id}")],
+        [InlineKeyboardButton(text="✅ Check Payment Status", callback_data=f"req:{txn}")],
         [InlineKeyboardButton(text="❌ Cancel", callback_data="cancel")]
     ])
     await msg.answer_photo(photo=BufferedInputFile(buf.read(), filename="qr.png"), caption=cap, parse_mode="HTML", reply_markup=kb)
 
+# STEP 1: Ask user for the screenshot when they tap check status
 @dp.callback_query(F.data.startswith("req:"))
 async def handle_status_check(cb: CallbackQuery):
-    claim_id = cb.data.split(":")[1]
-    if claim_id not in pending_claims:
-        await cb.answer("❌ This payment session expired or has already been reviewed.")
+    txn = cb.data.split(":")[1]
+    uid = cb.from_user.id
+    
+    # Put user in screenshot-waiting mode linked to their Transaction Ref
+    user_screenshot_state[uid] = txn
+    
+    await cb.answer()
+    await cb.message.answer("📸 Please send a <b>screenshot of your payment receipt</b> now to submit for admin approval:", parse_mode="HTML")
+
+# STEP 2: Process the uploaded screenshot and send it instantly to you
+@dp.message(F.photo)
+async def process_screenshot_submission(msg: Message):
+    uid = msg.from_user.id
+    
+    # Check if the user was actually supposed to send a screenshot
+    if uid not in user_screenshot_state:
         return
         
-    uid = pending_claims[claim_id]["uid"]
-    txn = pending_claims[claim_id]["txn"]
+    txn = user_screenshot_state[uid]
+    del user_screenshot_state[uid] # Clear user state immediately
     
-    await cb.answer("⏳ Verification request sent to admin! Please wait.", show_alert=True)
-    await cb.message.edit_caption(caption="⏳ <b>Verification Request Sent</b>\n\nThe admin is verifying your transaction details now.", parse_mode="HTML")
+    claim_id = str(random.randint(1000, 9999))
+    pending_claims[claim_id] = {"uid": uid, "txn": txn, "session_amt": 0}
+    
+    photo_id = msg.photo[-1].file_id
+    await msg.answer("⏳ <b>Receipt submitted!</b> The admin is verifying your transaction details now. Thank you.", parse_mode="HTML", reply_markup=main_kb())
     
     akb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ ₹1", callback_data=f"add:{claim_id}:1"), InlineKeyboardButton(text="➕ ₹5", callback_data=f"add:{claim_id}:5")],
@@ -118,7 +134,8 @@ async def handle_status_check(cb: CallbackQuery):
         [InlineKeyboardButton(text="📩 Confirm & Send Receipt", callback_data=f"send:{claim_id}")],
         [InlineKeyboardButton(text="❌ Decline Request", callback_data=f"deny:{claim_id}")]
     ])
-    await bot.send_message(chat_id=ADMIN_TELEGRAM_ID, text=f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0", reply_markup=akb, parse_mode="HTML")
+    
+    await bot.send_photo(chat_id=ADMIN_TELEGRAM_ID, photo=photo_id, caption=f"🚨 <b>New Deposit Verification Request!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0", reply_markup=akb, parse_mode="HTML")
 
 @dp.callback_query(F.data.startswith("add:"))
 async def admin_add_click(cb: CallbackQuery):
@@ -127,7 +144,7 @@ async def admin_add_click(cb: CallbackQuery):
     add_amt = int(add_amt)
     
     if claim_id not in pending_claims:
-        await cb.message.edit_text("❌ This transaction claim tracking context has expired.")
+        await cb.answer("❌ This transaction claim has expired.", show_alert=True)
         return
         
     uid = pending_claims[claim_id]["uid"]
@@ -149,15 +166,15 @@ async def admin_add_click(cb: CallbackQuery):
         [InlineKeyboardButton(text=f"📩 Confirm & Send ₹{current_total}", callback_data=f"send:{claim_id}")],
         [InlineKeyboardButton(text="❌ Decline Request", callback_data=f"deny:{claim_id}")]
     ])
-    await cb.message.edit_text(text=f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{current_total}", reply_markup=akb, parse_mode="HTML")
+    await cb.message.edit_caption(caption=f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{current_total}", reply_markup=akb, parse_mode="HTML")
 
 @dp.callback_query(F.data.startswith("send:"))
 async def admin_send_receipt_click(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_TELEGRAM_ID: return
-    claim_id = cb.data.split(":")[1]
+    _, claim_id = cb.data.split(":")
     
     if claim_id not in pending_claims:
-        await cb.message.edit_text("❌ This payment tracking session context has expired.")
+        await cb.message.edit_caption(caption="❌ Expired session context.")
         return
         
     uid = pending_claims[claim_id]["uid"]
@@ -167,7 +184,7 @@ async def admin_send_receipt_click(cb: CallbackQuery):
     del pending_claims[claim_id]
     
     current_bal = get_user_bal(uid)
-    await cb.message.edit_text(f"✅ Approved and sent receipt total of ₹{final_session_amt} to user <code>{uid}</code>.")
+    await cb.message.edit_caption(caption=f"✅ Approved and sent receipt total of ₹{final_session_amt} to user <code>{uid}</code>.")
     
     rcpt = f"✅ <b>Payment Confirmed!</b>\n\n<b>Transaction ID:</b> <code>{txn}</code>\n<b>Amount Added:</b> ₹{final_session_amt}\n<b>Current Total Balance:</b> ₹{current_bal}\n\nThank you for choosing SKY OTP!"
     try: await bot.send_message(chat_id=uid, text=rcpt, parse_mode="HTML")
@@ -176,32 +193,13 @@ async def admin_send_receipt_click(cb: CallbackQuery):
 @dp.callback_query(F.data.startswith("deny:"))
 async def admin_deny_click(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_TELEGRAM_ID: return
-    claim_id = cb.data.split(":")[1]
+    _, claim_id = cb.data.split(":")
     
     if claim_id in pending_claims:
         uid = pending_claims[claim_id]["uid"]
         del pending_claims[claim_id]
-        await cb.message.edit_text(f"❌ Denied request from user <code>{uid}</code>.")
+        await cb.message.edit_caption(caption=f"❌ Denied request from user <code>{uid}</code>.")
         try: await bot.send_message(chat_id=uid, text="❌ Your transaction review request was declined by the administrator.")
         except Exception: pass
 
 @dp.callback_query(F.data == "cancel")
-async def cancel_click(cb: CallbackQuery):
-    try: await cb.message.delete()
-    except Exception: pass
-
-async def main():
-    init_db()
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
-
-# FIXED: Structural blocks completely filled and fully aligned to remove all IndentationErrors
-if __name__ == "__main__":
-    while True:
-        try:
-            asyncio.run(main())
-        except (KeyboardInterrupt, SystemExit):
-            logging.info("Bot manually shut down.")
-            break
-        except Exception as error:
-            logging.error(f"Restarting loop due to error: {error}")

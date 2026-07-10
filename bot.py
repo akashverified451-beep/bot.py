@@ -12,7 +12,6 @@ from aiogram.types import (
 from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-import qrcode
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -20,8 +19,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnq
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 
-# Database Configuration (Ensures user data survives service restarts)
 DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
+
+class AdminStates(StatesGroup):
+    waiting_for_admin_amount = State()
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -108,15 +109,13 @@ async def process_back_to_main_text(message: Message, state: FSMContext):
 async def buy_telegram_account_handler(message: Message):
     await message.answer("🔄 <b>Live Telegram OTP Activation Enabled</b>\n\nPlease request your code from your app now.", parse_mode="HTML")
 
-# FIXED: Instant QR code response allowing custom payment amounts
 @dp.message(StateFilter(None), F.text == "➕ Add Funds")
 async def process_add_funds_text(message: Message, state: FSMContext):
+    import qrcode
     await state.clear()
     uid = message.from_user.id
-    
     txn_id = "".join([str(random.randint(0, 9)) for _ in range(15)])
     
-    # UPI URI payload without specific target amount parameter allows variable payment input 
     upi_payload = f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR"
     
     qr = qrcode.QRCode(version=1, box_size=10, border=4)
@@ -137,7 +136,7 @@ async def process_add_funds_text(message: Message, state: FSMContext):
     )
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Check Payment Status", callback_data=f"req_{uid}_any")],
+        [InlineKeyboardButton(text="✅ Check Payment Status", callback_data=f"req_{uid}_{txn_id}")],
         [InlineKeyboardButton(text="❌ Cancel Payment", callback_data="cancel_payment")]
     ])
     
@@ -149,48 +148,87 @@ async def process_add_funds_text(message: Message, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("req_"))
 async def handle_user_verification_request(callback: CallbackQuery):
-    _, uid, amt = callback.data.split("_")
+    _, uid, txn_id = callback.data.split("_")
     await callback.answer("⏳ Verification request sent to admin! Please wait.", show_alert=True)
     await callback.message.edit_caption(
-        caption=f"⏳ <b>Verification Request Sent</b>\n\nThe admin is verifying your custom payment transaction. Your profile will update upon review.", 
+        caption=f"⏳ <b>Verification Request Sent</b>\n\nThe admin is verifying your transaction. Your balance updates automatically following verification.", 
         parse_mode="HTML"
     )
-    # Admin must enter the approved value manually later or confirm validation
-    akb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Accept (Default ₹100)", callback_data=f"adm_approve_{uid}_100"),
-        InlineKeyboardButton(text="❌ Reject Payment", callback_data=f"adm_deny_{uid}_0")
-    ]])
-    await bot.send_message(chat_id=ADMIN_TELEGRAM_ID, text=f"🚨 <b>New Custom Request!</b>\n👤 <b>User:</b> <code>{uid}</code>\n💰 <b>Amount paid:</b> Open Amount", reply_markup=akb, parse_mode="HTML")
+    
+    akb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✍️ Enter Custom Amount", callback_data=f"adm_input_{uid}_{txn_id}")],
+        [InlineKeyboardButton(text="❌ Reject Payment", callback_data=f"adm_deny_{uid}")]
+    ])
+    await bot.send_message(chat_id=ADMIN_TELEGRAM_ID, text=f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User ID:</b> <code>{uid}</code>\n📌 <b>TXN ID:</b> <code>{txn_id}</code>\n\nVerify your bank statements and click below to enter the exact received value.", reply_markup=akb, parse_mode="HTML")
 
 @dp.callback_query(F.data.startswith("adm_"))
-async def handle_admin_decision(callback: CallbackQuery):
+async def handle_admin_decision(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != ADMIN_TELEGRAM_ID:
         return
-    _, action, uid, amt = callback.data.split("_")
-    uid, amt = int(uid), int(amt)
+        
+    data_parts = callback.data.split("_")
+    action = data_parts[1]
+    target_uid = int(data_parts[2])
     
-    if action == "approve":
-        update_balance(uid, amt)
-        await callback.message.edit_text(text=f"✅ Approved ₹{amt} for <code>{uid}</code>.", parse_mode="HTML")
-        try:
-            await bot.send_message(chat_id=uid, text=f"🎉 Your deposit was verified and balance was updated!", parse_mode="HTML")
-        except Exception: pass
+    if action == "input":
+        txn_id = data_parts[3]
+        await state.set_state(AdminStates.waiting_for_admin_amount)
+        await state.update_data(approve_target_uid=target_uid, admin_msg_id=callback.message.message_id, txn_id=txn_id)
+        await callback.answer()
+        await bot.send_message(chat_id=ADMIN_TELEGRAM_ID, text=f"💬 Please type the exact amount (in whole numbers) to credit user <code>{target_uid}</code>:", parse_mode="HTML")
+        
     elif action == "deny":
-        await callback.message.edit_text(text=f"❌ Denied request from <code>{uid}</code>.", parse_mode="HTML")
+        await callback.message.edit_text(text=f"❌ Denied request from user <code>{target_uid}</code>.", parse_mode="HTML")
         try:
-            await bot.send_message(chat_id=uid, text="❌ Your transaction review request was declined.", parse_mode="HTML")
+            await bot.send_message(chat_id=target_uid, text="❌ Your transaction review request was declined by the administrator.", parse_mode="HTML")
         except Exception: pass
 
-@dp.callback_query(F.data == "cancel_payment")
-async def handle_cancel_payment(callback: CallbackQuery):
+@dp.message(AdminStates.waiting_for_admin_amount)
+async def process_admin_amount_entry(message: Message, state: FSMContext):
+    if message.from_user.id != ADMIN_TELEGRAM_ID:
+        return
+        
+    text_input = message.text.strip()
+    if not text_input.isdigit():
+        await message.answer("❌ Invalid input. Please write numbers only (e.g., 50 or 500):")
+        return
+        
+    credit_amount = int(text_input)
+    if credit_amount <= 0:
+        await message.answer("❌ The amount must be greater than 0. Enter a valid value:")
+        return
+        
+    state_data = await state.get_data()
+    target_uid = state_data.get("approve_target_uid")
+    old_msg_id = state_data.get("admin_msg_id")
+    txn_id = state_data.get("txn_id")
+    await state.clear()
+    
+    # 1. Fetch current profile statistics before balance updates occur
+    user_data = get_user(target_uid)
+    previous_balance = user_data[0] if user_data else 0
+    new_balance = previous_balance + credit_amount
+    
+    # 2. Add requested amount into balance spreadsheet 
+    update_balance(target_uid, credit_amount)
+    
+    await message.answer(f"✅ Successfully accredited ₹{credit_amount} to user <code>{target_uid}</code>.", parse_mode="HTML")
+    
     try:
-        await callback.message.delete()
+        await bot.edit_message_text(chat_id=ADMIN_TELEGRAM_ID, message_id=old_msg_id, text=f"✅ Approved & added ₹{credit_amount} for <code>{target_uid}</code>.", parse_mode="HTML")
+    except Exception: pass
+    
+    # 3. Deliver customized breakdown log receipt directly to customer dashboard
+    customer_receipt = (
+        f"✅ <b>Payment Confirmed!</b>\n\n"
+        f"<b>Transaction ID:</b> <code>{txn_id}</code>\n"
+        f"<b>Amount:</b> ₹{credit_amount}\n"
+        f"<b>Previous Balance:</b> ₹{previous_balance}\n"
+        f"<b>New Balance:</b> ₹{new_balance}\n\n"
+        f"Thank you for your payment!"
+    )
+    
+    try:
+        await bot.send_message(chat_id=target_uid, text=customer_receipt, parse_mode="HTML")
     except Exception: pass
 
-async def main():
-    init_db()
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())

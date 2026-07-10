@@ -17,7 +17,6 @@ import qrcode
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Environmental Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
@@ -29,6 +28,7 @@ class DepositStates(StatesGroup):
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS users (uid INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0, join_date TEXT)")
+        conn.commit()
 
 def get_user_bal(uid):
     with sqlite3.connect(DB_PATH) as conn:
@@ -42,19 +42,21 @@ def get_user_jd(uid):
 
 def register_user(uid):
     with sqlite3.connect(DB_PATH) as conn:
-        if not conn.execute("SELECT uid FROM users WHERE uid = ?", (uid,)).fetchone():
+        row = conn.execute("SELECT uid FROM users WHERE uid = ?", (uid,)).fetchone()
+        if not row:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             conn.execute("INSERT INTO users (uid, balance, join_date) VALUES (?, 0, ?)", (uid, now))
+            conn.commit()
 
 def update_balance(uid, amount):
     register_user(uid)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("UPDATE users SET balance = balance + ? WHERE uid = ?", (amount, uid))
+        conn.commit()
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# Keyboards
 def main_kb():
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="🛍️ Buy Telegram Account")],
@@ -68,7 +70,6 @@ def balance_kb():
         [KeyboardButton(text="🔙 Back to Main Menu")]
     ], resize_keyboard=True)
 
-# Main Handlers
 @dp.message(CommandStart())
 async def cmd_start(msg: Message):
     register_user(msg.from_user.id)
@@ -197,4 +198,5 @@ async def cancel_click(cb: CallbackQuery):
     try: await cb.message.delete()
     except Exception: pass
 
-# --- FASTAPI SERVER ENGINE ---
+app = FastAPI()
+

@@ -64,7 +64,6 @@ def update_balance(uid, amount):
     conn.close()
 
 bot = Bot(token=BOT_TOKEN)
-# FIXED: Explicit MemoryStorage keeps FSM state parameters contextually active and alive on Render
 dp = Dispatcher(storage=MemoryStorage())
 
 def get_main_keyboard():
@@ -232,3 +231,8 @@ async def process_admin_amount_entry(message: Message, state: FSMContext):
     except Exception: pass
 
 @dp.callback_query(F.data == "cancel_payment")
+async def handle_cancel_payment(callback: CallbackQuery):
+    try:
+        await callback.message.delete()
+    except Exception: pass
+

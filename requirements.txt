@@ -3,4 +3,5 @@ aiohttp>=3.9.5
 Telethon>=1.36.0
 qrcode[pillow]
 pillow
-psycopg[binary]==3.2.4
+psycopg==3.2.4
+psycopg-binary

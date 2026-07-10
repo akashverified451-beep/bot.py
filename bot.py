@@ -227,3 +227,4 @@ async def handle_admin_decision(callback: CallbackQuery, state: FSMContext):
         await bot.send_message(chat_id=ADMIN_TELEGRAM_ID, text=f"💬 Please type the exact amount (in whole numbers) to credit user <code>{target_uid}</code>:", parse_mode="HTML")
         
     elif action == "deny":
+        await callback.message.edit_text(text=f"❌ Denied request from user <code>{target_uid}</code>.", parse_mode="HTML")

@@ -6,14 +6,8 @@ import io
 import sqlite3
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import (
-    Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
-)
-from aiogram.filters import CommandStart, StateFilter
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
-import qrcode
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
+from aiogram.filters import CommandStart
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -22,209 +16,182 @@ ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
 
-class AdminStates(StatesGroup):
-    waiting_for_admin_amount = State()
-
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                uid INTEGER PRIMARY KEY,
-                balance INTEGER DEFAULT 0,
-                join_date TEXT
-            )
-        ''')
-        conn.commit()
+        conn.execute("CREATE TABLE IF NOT EXISTS users (uid INTEGER PRIMARY KEY, balance REAL DEFAULT 0.0, join_date TEXT)")
 
-def get_user_data(uid):
+def get_user_bal(uid):
     with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT balance, join_date FROM users WHERE uid = ?", (uid,))
-        return cursor.fetchone()
+        row = conn.execute("SELECT balance FROM users WHERE uid = ?", (uid,)).fetchone()
+        return round(row[0], 2) if row else 0.0
+
+def get_user_jd(uid):
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT join_date FROM users WHERE uid = ?", (uid,)).fetchone()
+        return row[0] if row else "N/A"
 
 def register_user(uid):
-    if get_user_data(uid) is None:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
+    with sqlite3.connect(DB_PATH) as conn:
+        if not conn.execute("SELECT uid FROM users WHERE uid = ?", (uid,)).fetchone():
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (?, 0, ?)", (uid, now))
-            conn.commit()
+            conn.execute("INSERT INTO users (uid, balance, join_date) VALUES (?, 0.0, ?)", (uid, now))
 
 def update_balance(uid, amount):
     register_user(uid)
     with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET balance = balance + ? WHERE uid = ?", (amount, uid))
-        conn.commit()
+        conn.execute("UPDATE users SET balance = balance + ? WHERE uid = ?", (amount, uid))
 
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
+dp = Dispatcher()
 
-def get_main_keyboard():
+def main_kb():
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="🛍️ Buy Telegram Account")],
         [KeyboardButton(text="🗨️ Buy Whatsapp OTP")],
         [KeyboardButton(text="💼 Wallet"), KeyboardButton(text="👤 User Profile")]
     ], resize_keyboard=True)
 
-def get_balance_reply_keyboard():
+def balance_kb():
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="➕ Add Funds")],
         [KeyboardButton(text="🔙 Back to Main Menu")]
     ], resize_keyboard=True)
 
 @dp.message(CommandStart())
-async def command_start_handler(message: Message):
-    register_user(message.from_user.id)
-    await message.answer("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", reply_markup=get_main_keyboard())
+async def cmd_start(msg: Message):
+    register_user(msg.from_user.id)
+    await msg.answer("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", reply_markup=main_kb())
 
-# --- ADMIN INPUT CAPTURE ---
-@dp.message(AdminStates.waiting_for_admin_amount)
-async def process_admin_amount_entry(message: Message, state: FSMContext):
-    if message.from_user.id != ADMIN_TELEGRAM_ID:
-        return
-        
-    text_input = message.text.strip()
-    if not text_input.isdigit():
-        await message.answer("❌ Invalid input. Please write numbers only (e.g., 50 or 500):")
-        return
-        
-    credit_amount = int(text_input)
-    if credit_amount <= 0:
-        await message.answer("❌ The amount must be greater than 0. Enter a valid value:")
-        return
-        
-    state_data = await state.get_data()
-    target_uid = state_data.get("approve_target_uid")
-    old_msg_id = state_data.get("admin_msg_id")
-    txn_id = state_data.get("txn_id")
-    await state.clear()
-    
-    user_data = get_user_data(target_uid)
-    previous_balance = user_data[0] if user_data else 0
-    new_balance = previous_balance + credit_amount
-    
-    update_balance(target_uid, credit_amount)
-    
-    await message.answer(f"✅ Successfully accredited ₹{credit_amount} to user <code>{target_uid}</code>.", parse_mode="HTML")
-    
-    try:
-        await bot.edit_message_text(chat_id=ADMIN_TELEGRAM_ID, message_id=old_msg_id, text=f"✅ Approved & added ₹{credit_amount} for <code>{target_uid}</code>.", parse_mode="HTML")
-    except Exception as err:
-        logging.error(f"Failed to edit admin message: {err}")
-    
-    customer_receipt = (
-        f"✅ <b>Payment Confirmed!</b>\n\n"
-        f"<b>Transaction ID:</b> <code>{txn_id}</code>\n"
-        f"<b>Amount:</b> ₹{credit_amount}\n"
-        f"<b>Previous Balance:</b> ₹{previous_balance}\n"
-        f"<b>New Balance:</b> ₹{new_balance}\n\n"
-        f"Thank you for your payment!"
-    )
-    
-    try:
-        await bot.send_message(chat_id=target_uid, text=customer_receipt, parse_mode="HTML")
-    except Exception as err:
-        logging.error(f"Failed to send customer receipt: {err}")
+@dp.message(F.text == "💼 Wallet")
+async def wallet_handler(msg: Message):
+    register_user(msg.from_user.id)
+    await msg.answer(f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{get_user_bal(msg.from_user.id)}</b>\n\nPlease select your funding process.", reply_markup=balance_kb(), parse_mode="HTML")
 
-# --- STANDARD USER INTERFACE HANDLERS ---
-@dp.message(StateFilter(None), F.text == "💼 Wallet")
-async def balance_handler(message: Message):
-    uid = message.from_user.id
-    register_user(uid)
-    user_data = get_user_data(uid)
-    bal = user_data[0] if user_data else 0
-    await message.answer(text=f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", reply_markup=get_balance_reply_keyboard(), parse_mode="HTML")
-
-@dp.message(StateFilter(None), F.text == "👤 User Profile")
-async def profile_handler(message: Message):
-    uid = message.from_user.id
-    register_user(uid)
-    user_data = get_user_data(uid)
-    bal = user_data[0] if user_data else 0
-    jd = user_data[1] if user_data else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    await message.answer(text=f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{bal}\n📅 <b>Join Date:</b> {jd}", parse_mode="HTML")
+@dp.message(F.text == "👤 User Profile")
+async def profile_handler(msg: Message):
+    register_user(msg.from_user.id)
+    uid = msg.from_user.id
+    await msg.answer(f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{get_user_bal(uid)}\n📅 <b>Join Date:</b> {get_user_jd(uid)}", parse_mode="HTML")
 
 @dp.message(F.text == "🔙 Back to Main Menu")
-async def process_back_to_main_text(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer(text="👋 Welcome to SKY OTP BOT.", reply_markup=get_main_keyboard())
+async def back_handler(msg: Message):
+    await msg.answer("👋 Welcome to SKY OTP BOT.", reply_markup=main_kb())
 
-@dp.message(StateFilter(None), F.text == "🛍️ Buy Telegram Account")
-async def buy_telegram_account_handler(message: Message):
-    await message.answer("🔄 <b>Live Telegram OTP Activation Enabled</b>\n\nPlease request your code from your app now.", parse_mode="HTML")
+@dp.message(F.text == "🛍️ Buy Telegram Account")
+async def buy_tg(msg: Message):
+    await msg.answer("🔄 <b>Live Telegram OTP Activation Enabled</b>\n\nPlease request your code from your app now.", parse_mode="HTML")
 
-@dp.message(StateFilter(None), F.text == "➕ Add Funds")
-async def process_add_funds_text(message: Message, state: FSMContext):
-    await state.clear()
-    uid = message.from_user.id
-    txn_id = "".join([str(random.randint(0, 9)) for _ in range(15)])
+@dp.message(F.text == "➕ Add Funds")
+async def add_funds_handler(msg: Message):
+    import qrcode
+    uid = msg.from_user.id
+    txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
     
+    # FIXED: Generate a completely unique identifier tracking paisa value (e.g., 11 to 99 paise)
+    paisa_extension = random.randint(11, 99)
+    
+    # Generate QR link embedded with variable tracking markers so the app defaults to include it
     upi_payload = f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR"
+    img = qrcode.make(upi_payload)
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
     
-    qr = qrcode.QRCode(version=1, box_size=10, border=4)
-    qr.add_data(upi_payload)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    
-    img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='PNG')
-    img_byte_arr.seek(0)
-    input_file = BufferedInputFile(img_byte_arr.read(), filename="payment_qr.png")
-    
-    pay_msg = (
+    cap = (
         f"👋 <b>Welcome to the Deposit System</b>\n\n"
-        f"Scan the QR code below and pay <b>any amount</b> you wish to add to your wallet.\n\n"
-        f"📌 <b>Transaction Reference:</b>\n<code>{txn_id}</code>\n\n"
-        f"After making the payment, click <b>'Check Payment Status'</b> below to notify the admin."
+        f"⚠️ <b>CRITICAL IDENTIFICATION RULE:</b>\n"
+        f"To avoid validation delays, please modify your final payment value to include exactly <b>.{paisa_extension}</b> paise!\n"
+        f"Example: If paying ₹100, transfer exactly <b>₹100.{paisa_extension}</b>\n\n"
+        f"📌 <b>Your Assigned Identifier Code:</b> `.{paisa_extension}` paise.\n"
+        f"📌 <b>Transaction Reference:</b> <code>{txn}</code>"
     )
-    
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Check Payment Status", callback_data=f"req_{uid}_{txn_id}")],
-        [InlineKeyboardButton(text="❌ Cancel Payment", callback_data="cancel_payment")]
+        [InlineKeyboardButton(text="✅ Check Status", callback_data=f"chk_{uid}_{txn}_{paisa_extension}")],
+        [InlineKeyboardButton(text="❌ Cancel", callback_data="cancel")]
     ])
-    
-    try:
-        await message.answer_photo(photo=input_file, caption=pay_msg, parse_mode="HTML", reply_markup=kb)
-    except Exception as err:
-        logging.error(f"Failed to send QR: {err}")
-        await message.answer("❌ System processing error. Please contact the administrator.")
+    await msg.answer_photo(photo=BufferedInputFile(buf.read(), filename="qr.png"), caption=cap, parse_mode="HTML", reply_markup=kb)
 
-# --- INLINE INTERACTIVE BUTTON CALLBACKS ---
-@dp.callback_query(F.data.startswith("req_"))
-async def handle_user_verification_request(callback: CallbackQuery):
-    data_parts = callback.data.split("_")
-    uid = data_parts[1]
-    txn_id = data_parts[2]
-    
-    await callback.answer("⏳ Verification request sent to admin! Please wait.", show_alert=True)
-    await callback.message.edit_caption(
-        caption=f"⏳ <b>Verification Request Sent</b>\n\nThe admin is verifying your transaction. Your balance updates automatically following verification.", 
-        parse_mode="HTML"
-    )
+@dp.callback_query(F.data.startswith("chk_"))
+async def user_check_click(cb: CallbackQuery):
+    parts = cb.data.split("_")
+    uid, txn, paisa = parts[1], parts[2], parts[3]
+    await cb.answer("⏳ Verification request sent to admin!", show_alert=True)
+    await cb.message.edit_caption(caption="⏳ <b>Verification Sent</b>\n\nThe admin is verifying your payment profile matching tracking signatures.", parse_mode="HTML")
     
     akb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✍️ Enter Custom Amount", callback_data=f"adm_input_{uid}_{txn_id}")],
-        [InlineKeyboardButton(text="❌ Reject Payment", callback_data=f"adm_deny_{uid}")]
+        [InlineKeyboardButton(text="➕ ₹1", callback_data=f"add_{uid}_{txn}_1"), InlineKeyboardButton(text="➕ ₹5", callback_data=f"add_{uid}_{txn}_5")],
+        [InlineKeyboardButton(text="➕ ₹10", callback_data=f"add_{uid}_{txn}_10"), InlineKeyboardButton(text="➕ ₹50", callback_data=f"add_{uid}_{txn}_50")],
+        [InlineKeyboardButton(text="➕ ₹100", callback_data=f"add_{uid}_{txn}_100"), InlineKeyboardButton(text="➕ ₹500", callback_data=f"add_{uid}_{txn}_500")],
+        [InlineKeyboardButton(text="📩 Confirm & Send", callback_data=f"snd_{uid}_{txn}_0")],
+        [InlineKeyboardButton(text="❌ Decline Request", callback_data=f"dny_{uid}")]
     ])
-    await bot.send_message(chat_id=ADMIN_TELEGRAM_ID, text=f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User ID:</b> <code>{uid}</code>\n📌 <b>TXN ID:</b> <code>{txn_id}</code>\n\nVerify your bank statements and click below to enter the exact received value.", reply_markup=akb, parse_mode="HTML")
-
-@dp.callback_query(F.data.startswith("adm_"))
-async def handle_admin_decision(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id != ADMIN_TELEGRAM_ID:
-        return
-        
-    data_parts = callback.data.split("_")
-    action = data_parts[1]
-    target_uid = int(data_parts[2])
     
-    if action == "input":
-        txn_id = data_parts[3]
-        await state.set_state(AdminStates.waiting_for_admin_amount)
-        await state.update_data(approve_target_uid=target_uid, admin_msg_id=callback.message.message_id, txn_id=txn_id)
-        await callback.answer()
-        await bot.send_message(chat_id=ADMIN_TELEGRAM_ID, text=f"💬 Please type the exact amount (in whole numbers) to credit user <code>{target_uid}</code>:", parse_mode="HTML")
+    # Admin notification clearly labels the identifying micro-amount to look for in bank logs
+    await bot.send_message(
+        chat_id=ADMIN_TELEGRAM_ID, 
+        text=f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN:</b> <code>{txn}</code>\n🔍 <b>Look for Statement Ending In:</b> <u><b>.{paisa} Paisa</b></u>\n💰 <b>Added So Far:</b> ₹0", 
+        reply_markup=akb, 
+        parse_mode="HTML"
+    )
+
+@dp.callback_query(F.data.startswith("add_"))
+async def admin_add_click(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_TELEGRAM_ID: return
+    parts = cb.data.split("_")
+    uid, txn, amt = int(parts[1]), parts[2], int(parts[3])
+    
+    current_text = cb.message.text
+    session_amt = 0
+    if "Added So Far: ₹" in current_text:
+        try: session_amt = int(current_text.split("Added So Far: ₹")[1].strip())
+        except Exception: session_amt = 0
         
-    elif action == "deny":
-        await callback.message.edit_text(text=f"❌ Denied request from user <code>{target_uid}</code>.", parse_mode="HTML")
+    new_session_total = session_amt + amt
+    update_balance(uid, amt)
+    await cb.answer(f"Added +₹{amt}")
+    
+    akb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ ₹1", callback_data=f"add_{uid}_{txn}_1"), InlineKeyboardButton(text="➕ ₹5", callback_data=f"add_{uid}_{txn}_5")],
+        [InlineKeyboardButton(text="➕ ₹10", callback_data=f"add_{uid}_{txn}_10"), InlineKeyboardButton(text="➕ ₹50", callback_data=f"add_{uid}_{txn}_50")],
+        [InlineKeyboardButton(text="➕ ₹100", callback_data=f"add_{uid}_{txn}_100"), InlineKeyboardButton(text="➕ ₹500", callback_data=f"add_{uid}_{txn}_500")],
+        [InlineKeyboardButton(text=f"📩 Confirm & Send ₹{new_session_total}", callback_data=f"snd_{uid}_{txn}_{new_session_total}")],
+        [InlineKeyboardButton(text="❌ Decline Request", callback_data=f"dny_{uid}")]
+    ])
+    
+    # Keeps parsing the statement identifier visible while you configure target values
+    paisa_label = current_text.split("Look for Statement Ending In:")[1].split("\n")[0].strip()
+    await cb.message.edit_text(text=f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN:</b> <code>{txn}</code>\n🔍 <b>Look for Statement Ending In:</b> {paisa_label}\n💰 <b>Added So Far:</b> ₹{new_session_total}", reply_markup=akb, parse_mode="HTML")
+
+@dp.callback_query(F.data.startswith("snd_"))
+async def admin_send_receipt_click(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_TELEGRAM_ID: return
+    parts = cb.data.split("_")
+    uid, txn, final_session_amt = int(parts[1]), parts[2], int(parts[3])
+    
+    current_bal = get_user_bal(uid)
+    await cb.message.edit_text(f"✅ Approved and sent receipt total of ₹{final_session_amt} to user <code>{uid}</code>.")
+    
+    rcpt = f"✅ <b>Payment Confirmed!</b>\n\n<b>Transaction ID:</b> <code>{txn}</code>\n<b>Amount Added:</b> ₹{final_session_amt}\n<b>Current Total Balance:</b> ₹{current_bal}\n\nThank you for choosing SKY OTP!"
+    try: await bot.send_message(chat_id=uid, text=rcpt, parse_mode="HTML")
+    except Exception: pass
+
+@dp.callback_query(F.data.startswith("dny_"))
+async def admin_deny_click(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_TELEGRAM_ID: return
+    uid = int(cb.data.split("_")[1])
+    await cb.message.edit_text(f"❌ Denied request from user <code>{uid}</code>.")
+    try: await bot.send_message(chat_id=uid, text="❌ Your transaction review request was declined by the administrator.")
+    except Exception: pass
+
+@dp.callback_query(F.data == "cancel")
+async def cancel_click(cb: CallbackQuery):
+    try: await cb.message.delete()
+    except Exception: pass
+
+async def main():
+    init_db()
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())

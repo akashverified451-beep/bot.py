@@ -90,7 +90,6 @@ async def balance_handler(message: Message):
     uid = message.from_user.id
     register_user(uid)
     user_data = get_user(uid)
-    # FIXED: Extracting index position 0 prevents tuple conversion crashing errors
     bal = user_data[0] if user_data else 0
     await message.answer(text=f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", reply_markup=get_balance_reply_keyboard(), parse_mode="HTML")
 
@@ -99,7 +98,6 @@ async def profile_handler(message: Message):
     uid = message.from_user.id
     register_user(uid)
     user_data = get_user(uid)
-    # FIXED: Unpacking index row elements safely prevents type mismatches 
     bal = user_data[0] if user_data else 0
     jd = user_data[1] if user_data else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await message.answer(text=f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{bal}\n📅 <b>Join Date:</b> {jd}", parse_mode="HTML")
@@ -225,7 +223,14 @@ async def process_admin_amount_entry(message: Message, state: FSMContext):
         f"<b>Amount:</b> ₹{credit_amount}\n"
         f"<b>Previous Balance:</b> ₹{previous_balance}\n"
         f"<b>New Balance:</b> ₹{new_balance}\n\n"
-        f"Thank you for your payment!")
+        f"Thank you for your payment!"
+    )
     
-    if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        await bot.send_message(chat_id=target_uid, text=customer_receipt, parse_mode="HTML")
+    except Exception: pass
+
+@dp.callback_query(F.data == "cancel_payment")
+async def handle_cancel_payment(callback: CallbackQuery):
+    try:
+        await callback.message.delete()

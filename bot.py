@@ -11,7 +11,7 @@ from aiogram.fsm.context import FSMContext
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# --- INITIAL CONFIGURATION AND CORE SETTINGS ---
+# --- CORE PARAMS & ENVIRONMENT CONFIG ---
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
@@ -26,7 +26,7 @@ class AddNumberState(StatesGroup):
 def get_db_connection():
     return psycopg.connect(DATABASE_URL)
 
-# --- DATABASE SCHEMA INTERFACE LAYER ---
+# --- BACKEND STORAGE DATA HANDLERS ---
 def init_db():
     try:
         with get_db_connection() as conn:
@@ -62,9 +62,9 @@ def init_db():
                     )
                 """)
                 conn.commit()
-                logging.info("🚀 Database structures checked and updated.")
+                logging.info("⚡ Premium Store database schemas initialized successfully.")
     except Exception as e:
-        logging.error(f"PostgreSQL Connection Error: {e}")
+        logging.error(f"Database sync fault exception: {e}")
 
 def get_stock_count(country_id):
     try:
@@ -86,7 +86,7 @@ def get_user_bal(uid):
     except Exception:
         return 0.00
 
-# --- STORE REGION ASSIGNMENTS ---
+# --- PREMIUM STYLED PLATFORM CONFIGURATION ---
 COUNTRY_SERVICES = [
     {"id": "colombia", "name": "Colombia", "flag": "🇨🇴", "price": 36.29},
     {"id": "nigeria", "name": "Nigeria", "flag": "🇳🇬", "price": 36.29},
@@ -99,27 +99,31 @@ COUNTRY_SERVICES = [
 
 def main_kb():
     return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🛍️ Buy Telegram Account")],
-        [KeyboardButton(text="💼 Wallet")]
+        [KeyboardButton(text="⚡ INSTANT SMS STORE ⚡")],
+        [KeyboardButton(text="💳 MY WALLET"), KeyboardButton(text="👤 ACCOUNT PROFILE")]
     ], resize_keyboard=True)
 
 def generate_services_keyboard() -> InlineKeyboardMarkup:
     keyboard = []
+    
+    # Modern Informational Header Row Block
     keyboard.append([
-        InlineKeyboardButton(text="🌍 Country", callback_data="noop"),
-        InlineKeyboardButton(text="💰 Price", callback_data="noop"),
-        InlineKeyboardButton(text="📦 Stock", callback_data="noop")
+        InlineKeyboardButton(text="🌐 COUNTRY PLATFORM", callback_data="noop"),
+        InlineKeyboardButton(text="💎 RATE", callback_data="noop"),
+        InlineKeyboardButton(text="🔥 AVAILABILITY", callback_data="noop")
     ])
+    
     for country in COUNTRY_SERVICES:
         stock = get_stock_count(country["id"])
+        status_text = f"[{stock}] AVAIL ✅" if stock > 0 else "🚫 EMPTY"
         keyboard.append([
             InlineKeyboardButton(text=f"{country['flag']} {country['name']}", callback_data=f"select_co_{country['id']}"),
             InlineKeyboardButton(text=f"₹{country['price']}", callback_data=f"select_co_{country['id']}"),
-            InlineKeyboardButton(text=f"[{stock}] ✅", callback_data=f"select_co_{country['id']}")
+            InlineKeyboardButton(text=status_text, callback_data=f"select_co_{country['id']}")
         ])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-# --- BOT ROUTING ENGINE AND UI HANDLERS ---
+# --- USER CHAT & STYLED FLOW RECEPTORS ---
 @dp.message(CommandStart())
 async def cmd_start(msg: Message):
     uid = msg.from_user.id
@@ -133,30 +137,45 @@ async def cmd_start(msg: Message):
                     conn.commit()
     except Exception as e:
         logging.error(f"Registration failure hook: {e}")
-    await msg.answer("👋 Welcome to SKY OTP BOT.\n✨ Use the options panel below to buy numbers.", reply_markup=main_kb())
+        
+    welcome_text = (
+        f"👑 <b>WELCOME TO SKY CLOUD OTP SERVICES</b> 👑\n"
+        f"────────────────────────────────\n"
+        f"⚡ <i>Passive, automated 24/7 activation server protocols.</i>\n\n"
+        f"📦 Use the interactive console board below to manage your inventory channels instantly."
+    )
+    await msg.answer(text=welcome_text, reply_markup=main_kb(), parse_mode="HTML")
 
-@dp.message(F.text == "🛍️ Buy Telegram Account")
+@dp.message(F.text == "⚡ INSTANT SMS STORE ⚡")
 async def show_tg_services(msg: Message):
-    await msg.answer(text="🛍️ <b>Available Telegram Services</b>", reply_markup=generate_services_keyboard(), parse_mode="HTML")
+    store_text = (
+        f"🛒 <b>LIVE INVENTORY ACTIVATION HUB</b>\n"
+        f"────────────────────────────────\n"
+        f"💡 Select your preferred localized zone channel reference parameters from the visual data matrix grid list below:"
+    )
+    await msg.answer(text=store_text, reply_markup=generate_services_keyboard(), parse_mode="HTML")
 
 @dp.callback_query(F.data.startswith("select_co_"))
 async def show_confirmation_screen(cb: CallbackQuery):
     country_id = cb.data.replace("select_co_", "")
     country = next((c for c in COUNTRY_SERVICES if c["id"] == country_id), None)
     if not country: 
-        return await cb.answer("❌ Selected listing context missing.")
+        return await cb.answer("❌ Selected listing context metadata corrupted.")
     
     stock = get_stock_count(country_id)
     confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Confirm Purchase", callback_data=f"conf_buy_{country['id']}")],
-        [InlineKeyboardButton(text="❌ Cancel Purchase", callback_data="cancel_action")]
+        [InlineKeyboardButton(text="💎 INITIALIZE TRANSACTION", callback_data=f"conf_buy_{country['id']}")],
+        [InlineKeyboardButton(text="❌ ABORT PURSUIT", callback_data="cancel_action")]
     ])
     
     confirmation_text = (
-        f"Dear customer, after you click the confirm button, the number will be reserved for you.\n\n"
-        f"🌍 <b>Country:</b> {country['name']} {country['flag']}\n"
-        f"💰 <b>Price:</b> ₹{country['price']}\n"
-        f"📦 <b>Stock:</b> {stock}"
+        f"📋 <b>DIGITAL INVENTORY REVIEW INVOICE</b>\n"
+        f"────────────────────────────────\n"
+        f"👋 Hello buyer, checking current server node paths. Confirm your purchase reservation metrics details below:\n\n"
+        f"🌍 <b>Target Country:</b> {country['flag']} {country['name']}\n"
+        f"💸 <b>Service Cost:</b> <code>₹{country['price']}</code>\n"
+        f"📦 <b>Node Stock:</b> <code>{stock} channels active</code>\n\n"
+        f"⚠️ <i>Funds are securely deducted only upon successful OTP receipt callback validation rules.</i>"
     )
     await cb.message.edit_text(text=confirmation_text, reply_markup=confirm_kb, parse_mode="HTML")
 
@@ -168,7 +187,14 @@ async def execute_internal_purchase(cb: CallbackQuery):
     
     user_balance = get_user_bal(uid)
     if user_balance < country["price"]:
-        return await cb.message.edit_text(text=f"❌ Your balance (₹{user_balance}) is too low.")
+        decline_text = (
+            f"❌ <b>TRANSACTION ATTEMPT REJECTED</b>\n"
+            f"────────────────────────────────\n"
+            f"💰 Your balance (<b>₹{user_balance}</b>) is too low.\n"
+            f"🏷️ This profile purchase block requires: <b>₹{country['price']}</b>\n\n"
+            f"👉 Please use the 💳 <b>MY WALLET</b> dashboard to add credit instantly."
+        )
+        return await cb.message.edit_text(text=decline_text, parse_mode="HTML")
 
     try:
         with get_db_connection() as conn:
@@ -176,7 +202,7 @@ async def execute_internal_purchase(cb: CallbackQuery):
                 cur.execute("SELECT id, phone_number FROM available_accounts WHERE country_id = %s AND is_sold = FALSE LIMIT 1 FOR UPDATE", (country_id,))
                 account = cur.fetchone()
                 if not account:
-                    return await cb.message.edit_text("❌ <b>Out of Stock!</b>")
+                    return await cb.message.edit_text("❌ <b>OUT OF STOCK!</b>\n\nAll session lines for this localized tier are currently locked or depleted.")
                     
                 account_id = account[0]
                 phone_number = account[1]
@@ -185,25 +211,6 @@ async def execute_internal_purchase(cb: CallbackQuery):
                 cur.execute("INSERT INTO active_orders (uid, account_id, phone_number, country_name, cost_inr, status, timestamp) VALUES (%s, %s, %s, %s, %s, 'WAITING', %s)", (uid, account_id, phone_number, country["name"], country["price"], datetime.now().isoformat()))
                 conn.commit()
                 
-        await cb.message.edit_text(text=f"📱 <b>Your Number is Reserved!</b>\n\n🌍 <b>Country:</b> {country['name']}\n🔢 <b>Number:</b> <code>{phone_number}</code>\n\n👉 Enter this number in Telegram app now. Code will arrive here automatically.", parse_mode="HTML")
-    except Exception as purchase_err:
-        logging.error(f"Database purchase statement failure: {purchase_err}")
-        await cb.message.edit_text("❌ A transactional loop error occurred. Please try again.")
-
-# --- ADMIN FUNCTIONS CONTROLLER LAYER ---
-@dp.message(Command("addnumber"))
-async def start_add_number(msg: Message, state: FSMContext):
-    if msg.from_user.id != ADMIN_TELEGRAM_ID: return
-    await msg.answer("📥 Format: <code>country_id | phone_number | api_id | api_hash | string_session</code>", parse_mode="HTML")
-    await state.set_state(AddNumberState.waiting_for_data)
-
-@dp.message(AddNumberState.waiting_for_data)
-async def process_number_data(msg: Message, state: FSMContext):
-    parts = [p.strip() for p in msg.text.split("|")]
-    if len(parts) != 5: return await msg.answer("❌ Format Error. Use | separator.")
-    country_id, phone, api_id, api_hash, session_str = parts
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("INSERT INTO available_accounts (country_id, phone_number, api_id, api_hash, string_session) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (phone_number) DO UPDATE SET string_session = EXCLUDED.string_session, is_sold = FALSE", (country_id.lower(), phone, api_id, api_hash, session_str))
-                conn.commit()
+        allocated_text = (
+            f"📱 <b>VIRTUAL SYSTEM RESERVATION COMPLETE</b>\n"
+            f"────────────────────────────────\n"

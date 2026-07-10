@@ -7,7 +7,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.fsm.state import StatesGroup, State
-from psycopg_pool import AsyncConnectionPool
+import psycopg
 
 # --- RIGOROUS SYSTEM LOGGING ---
 logging.basicConfig(
@@ -22,7 +22,6 @@ ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db")
 
-db_pool = None
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -33,7 +32,7 @@ class AddNumberState(StatesGroup):
 
 async def init_db():
     """Initializes schemas directly on execution boot."""
-    async with db_pool.connection() as conn:
+    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
         async with conn.cursor() as cur:
             await cur.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -65,7 +64,7 @@ async def init_db():
 
 async def register_user_profile(uid: int):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    async with db_pool.connection() as conn:
+    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
         async with conn.cursor() as cur:
             await cur.execute("""
                 INSERT INTO users (uid, balance, join_date) 
@@ -75,18 +74,11 @@ async def register_user_profile(uid: int):
             await conn.commit()
 
 async def get_node_stock(country_id: str) -> int:
-    async with db_pool.connection() as conn:
+    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
         async with conn.cursor() as cur:
             await cur.execute("SELECT COALESCE(COUNT(*), 0) FROM available_accounts WHERE country_id = %s AND is_sold = FALSE;", (country_id,))
             row = await cur.fetchone()
             return int(row[0])
-
-async def fetch_user_balance(uid: int) -> float:
-    async with db_pool.connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute("SELECT COALESCE(MAX(balance), 0.00) FROM users WHERE uid = %s;", (uid,))
-            row = await cur.fetchone()
-            return float(row[0])
 
 async def execute_atomic_checkout_pipeline(uid: int, country_id: str, c_name: str, c_price: float):
     """
@@ -123,7 +115,7 @@ async def execute_atomic_checkout_pipeline(uid: int, country_id: str, c_name: st
     SELECT phone_number FROM insert_order;
     """
     
-    async with db_pool.connection() as conn:
+    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
         async with conn.cursor() as cur:
             await cur.execute(atomic_query, (uid, c_price, country_id, c_price, c_name, c_price, now_str))
             result = await cur.fetchone()
@@ -200,12 +192,21 @@ async def process_purchase_callback(cb: CallbackQuery):
     c_id = cb.data.replace("buy_", "")
     country = next((item for item in COUNTRY_SERVICES if item["id"] == c_id))
     
-    # Fire the absolute pipeline function. Pure calculation, zero branching code
     db_receipt = await execute_atomic_checkout_pipeline(uid, c_id, country["name"], country["price"])
+    phone_num = db_receipt[0] if db_receipt else ""
     
-    # Use a dictionary mapping fallback logic matrix instead of using an 'if' or 'except' choice block
     result_actions = {
-        True: f"⏳ <b>OTP QUEUE CHANNELS SPINNING UP</b>\n────────────────────────────────\n📱 <b>Phone Number:</b> <code>{db_receipt[0] if db_receipt else ''}</code>\n🌐 <b>Region Setup:</b> {country['flag']} {country['name']}\n\n⚡ <i>The background transaction processing script is monitoring incoming verification events. Stand by...</i>",
+        True: f"⏳ <b>OTP QUEUE CHANNELS SPINNING UP</b>\n────────────────────────────────\n📱 <b>Phone Number:</b> <code>{phone_num}</code>\n🌐 <b>Region Setup:</b> {country['flag']} {country['name']}\n\n⚡ <i>The background transaction processing script is monitoring incoming verification events. Stand by...</i>",
         False: "❌ <b>TRANSACTION ATTEMPT REJECTED</b>\n────────────────────────────────\n⚠️ Checkout calculation parameters faulted.\n\nPossible Causes:\n🚨 Insufficient wallet balance funds configuration.\n🚨 Node inventory channels went out of stock during review.\n\n💳 Please check your configuration values or tap 'MY WALLET' to top up."
     }
     
+    await cb.message.edit_text(text=result_actions[bool(db_receipt)], parse_mode="HTML")
+
+# --- ENGINE LIFE CYCLE RUNLOOP ---
+async def main():
+    await init_db()
+    logging.info("🚀 Sky Cloud Bot Core Online. Clean asyncio connections loaded. Poller active...")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())

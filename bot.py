@@ -1,234 +1,207 @@
 import os
+import random
 import logging
-import psycopg
+import io
+import sqlite3
 import asyncio
+import time
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.filters import CommandStart, Command
-from aiogram.fsm.state import StatesGroup, State
-from aiogram.fsm.context import FSMContext
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
+from aiogram.filters import CommandStart
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# --- CORE PARAMS & ENVIRONMENT CONFIG ---
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db")
+DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
+
+pending_claims = {}
+
+def init_db():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS users (uid INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0, join_date TEXT)")
+        conn.commit()
+
+def get_user_bal(uid):
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT balance FROM users WHERE uid = ?", (uid,)).fetchone()
+        return row[0] if row else 0
+
+def get_user_jd(uid):
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT join_date FROM users WHERE uid = ?", (uid,)).fetchone()
+        return row[0] if row else "N/A"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-class AddNumberState(StatesGroup):
-    waiting_for_data = State()
-
-def get_db_connection():
-    return psycopg.connect(DATABASE_URL)
-
-# --- BACKEND STORAGE DATA HANDLERS ---
-def init_db():
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS users (
-                        uid BIGINT PRIMARY KEY, 
-                        balance NUMERIC(10, 2) DEFAULT 0.00, 
-                        join_date TEXT,
-                        screenshot_state BOOLEAN DEFAULT FALSE
-                    )
-                """)
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS available_accounts (
-                        id SERIAL PRIMARY KEY,
-                        country_id TEXT,
-                        phone_number TEXT UNIQUE,
-                        api_id TEXT,
-                        api_hash TEXT,
-                        string_session TEXT,
-                        is_sold BOOLEAN DEFAULT FALSE
-                    )
-                """)
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS active_orders (
-                        uid BIGINT,
-                        account_id INTEGER,
-                        phone_number TEXT,
-                        country_name TEXT,
-                        cost_inr NUMERIC(10, 2),
-                        status TEXT DEFAULT 'WAITING',
-                        timestamp TEXT
-                    )
-                """)
-                conn.commit()
-                logging.info("⚡ Premium Store database schemas initialized successfully.")
-    except Exception as e:
-        logging.error(f"Database sync fault exception: {e}")
-
-def get_stock_count(country_id):
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM available_accounts WHERE country_id = %s AND is_sold = FALSE", (country_id,))
-                row = cur.fetchone()
-                return row[0] if row else 0
-    except Exception:
-        return 0
-
-def get_user_bal(uid):
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
-                row = cur.fetchone()
-                return float(row[0]) if row else 0.00
-    except Exception:
-        return 0.00
-
-def get_user_profile_data(uid):
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT join_date FROM users WHERE uid = %s", (uid,))
-                row = cur.fetchone()
-                return row[0] if row else "Unknown Date"
-    except Exception:
-        return "Unknown Date"
-
-# --- PREMIUM STYLED PLATFORM CONFIGURATION ---
-COUNTRY_SERVICES = [
-    {"id": "colombia", "name": "Colombia", "flag": "🇨🇴", "price": 36.29},
-    {"id": "nigeria", "name": "Nigeria", "flag": "🇳🇬", "price": 36.29},
-    {"id": "bangladesh", "name": "Bangladesh", "flag": "🇧🇩", "price": 40.11},
-    {"id": "canada", "name": "Canada", "flag": "🇨🇦", "price": 40.11},
-    {"id": "usa", "name": "United States", "flag": "🇺🇸", "price": 41.06},
-    {"id": "india", "name": "India", "flag": "🇮🇳", "price": 41.06},
-    {"id": "iran", "name": "Iran", "flag": "🇮🇷", "price": 53.48},
-]
-
 def main_kb():
     return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="⚡ INSTANT SMS STORE ⚡")],
-        [KeyboardButton(text="💳 MY WALLET"), KeyboardButton(text="👤 ACCOUNT PROFILE")]
+        [KeyboardButton(text="🛍️ Buy Telegram Account")],
+        [KeyboardButton(text="🗨️ Buy Whatsapp OTP")],
+        [KeyboardButton(text="💼 Wallet"), KeyboardButton(text="👤 User Profile")]
     ], resize_keyboard=True)
 
-def generate_services_keyboard() -> InlineKeyboardMarkup:
-    keyboard = []
-    
-    keyboard.append([
-        InlineKeyboardButton(text="🌐 COUNTRY PLATFORM", callback_data="noop"),
-        InlineKeyboardButton(text="💎 RATE", callback_data="noop"),
-        InlineKeyboardButton(text="🔥 AVAILABILITY", callback_data="noop")
-    ])
-    
-    for country in COUNTRY_SERVICES:
-        stock = get_stock_count(country["id"])
-        status_text = f"[{stock}] AVAIL ✅" if stock > 0 else "🚫 EMPTY"
-        keyboard.append([
-            InlineKeyboardButton(text=f"{country['flag']} {country['name']}", callback_data=f"select_co_{country['id']}"),
-            InlineKeyboardButton(text=f"₹{country['price']}", callback_data=f"select_co_{country['id']}"),
-            InlineKeyboardButton(text=status_text, callback_data=f"select_co_{country['id']}")
-        ])
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+def balance_kb():
+    return ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text="➕ Add Funds")],
+        [KeyboardButton(text="🔙 Back to Main Menu")]
+    ], resize_keyboard=True)
 
-# --- USER CHAT & STYLED FLOW RECEPTORS ---
 @dp.message(CommandStart())
 async def cmd_start(msg: Message):
     uid = msg.from_user.id
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
-                if not cur.fetchone():
-                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    cur.execute("INSERT INTO users (uid, balance, join_date) VALUES (%s, 0.00, %s)", (uid, now))
-                    conn.commit()
-    except Exception as e:
-        logging.error(f"Registration failure hook: {e}")
+    with sqlite3.connect(DB_PATH) as conn:
+        if not conn.execute("SELECT uid FROM users WHERE uid = ?", (uid,)).fetchone():
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute("INSERT INTO users (uid, balance, join_date) VALUES (?, 0, ?)", (uid, now))
+            conn.commit()
+    await msg.answer("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", reply_markup=main_kb())
+
+@dp.message(F.text == "💼 Wallet")
+async def wallet_handler(msg: Message):
+    await msg.answer(text=f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{get_user_bal(msg.from_user.id)}</b>\n\nPlease select your funding process.", reply_markup=balance_kb(), parse_mode="HTML")
+
+@dp.message(F.text == "👤 User Profile")
+async def profile_handler(msg: Message):
+    uid = msg.from_user.id
+    await msg.answer(text=f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{get_user_bal(uid)}\n📅 <b>Join Date:</b> {get_user_jd(uid)}", parse_mode="HTML")
+
+@dp.message(F.text == "🔙 Back to Main Menu")
+async def back_handler(msg: Message):
+    await msg.answer("👋 Welcome to SKY OTP BOT.", reply_markup=main_kb())
+
+@dp.message(F.text == "🛍️ Buy Telegram Account")
+async def buy_tg(msg: Message):
+    await msg.answer("🔄 <b>Live Telegram OTP Activation Enabled</b>\n\nPlease request your code from your app now.", parse_mode="HTML")
+
+@dp.message(F.text == "➕ Add Funds")
+async def add_funds_handler(msg: Message):
+    import qrcode
+    uid = msg.from_user.id
+    txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
+    
+    claim_id = str(random.randint(1000, 9999))
+    pending_claims[claim_id] = {"uid": uid, "txn": txn, "session_amt": 0}
+    
+    img = qrcode.make(f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR")
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    
+    cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay <b>any amount</b> you wish to add to your wallet.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Check Payment Status", callback_data=f"req:{claim_id}")],
+        [InlineKeyboardButton(text="❌ Cancel", callback_data="cancel")]
+    ])
+    await msg.answer_photo(photo=BufferedInputFile(buf.read(), filename="qr.png"), caption=cap, parse_mode="HTML", reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("req:"))
+async def handle_status_check(cb: CallbackQuery):
+    claim_id = cb.data.split(":")[1]
+    if claim_id not in pending_claims:
+        await cb.answer("❌ This payment session expired or has already been reviewed.")
+        return
         
-    welcome_text = """👑 <b>WELCOME TO SKY CLOUD OTP SERVICES</b> 👑
-────────────────────────────────
-⚡ <i>Passive, automated 24/7 activation server protocols.</i>
-
-📦 Use the interactive console board below to manage your inventory channels instantly."""
+    uid = pending_claims[claim_id]["uid"]
+    txn = pending_claims[claim_id]["txn"]
     
-    await msg.answer(text=welcome_text, reply_markup=main_kb(), parse_mode="HTML")
-
-@dp.message(F.text == "⚡ INSTANT SMS STORE ⚡")
-async def show_tg_services(msg: Message):
-    store_text = """🛒 <b>LIVE INVENTORY ACTIVATION HUB</b>
-────────────────────────────────
-💡 Select your preferred localized zone channel reference parameters from the visual data matrix grid list below:"""
+    await cb.answer("⏳ Verification request sent to admin! Please wait.", show_alert=True)
+    await cb.message.edit_caption(caption="⏳ <b>Verification Request Sent</b>\n\nThe admin is verifying your transaction details now.", parse_mode="HTML")
     
-    await msg.answer(text=store_text, reply_markup=generate_services_keyboard(), parse_mode="HTML")
-
-# --- ADDED: EXPLICIT WALLET INTERFACE RECEIVER ---
-@dp.message(F.text == "💳 MY WALLET")
-async def show_my_wallet(msg: Message):
-    uid = msg.from_user.id
-    balance = get_user_bal(uid)
-    
-    wallet_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ DEPOSIT FUNDS (UPI)", callback_data="add_funds_upi")]
+    akb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ ₹1", callback_data=f"add:{claim_id}:1"), InlineKeyboardButton(text="➕ ₹5", callback_data=f"add:{claim_id}:5")],
+        [InlineKeyboardButton(text="➕ ₹10", callback_data=f"add:{claim_id}:10"), InlineKeyboardButton(text="➕ ₹50", callback_data=f"add:{claim_id}:50")],
+        [InlineKeyboardButton(text="➕ ₹100", callback_data=f"add:{claim_id}:100"), InlineKeyboardButton(text="➕ ₹500", callback_data=f"add:{claim_id}:500")],
+        [InlineKeyboardButton(text="📩 Confirm & Send Receipt", callback_data=f"send:{claim_id}")],
+        [InlineKeyboardButton(text="❌ Decline Request", callback_data=f"deny:{claim_id}")]
     ])
+    await bot.send_message(chat_id=ADMIN_TELEGRAM_ID, text=f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0", reply_markup=akb, parse_mode="HTML")
+
+@dp.callback_query(F.data.startswith("add:"))
+async def admin_add_click(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_TELEGRAM_ID: return
+    _, claim_id, add_amt = cb.data.split(":")
+    add_amt = int(add_amt)
     
-    wallet_text = f"""💳 <b>YOUR CONFIGURATION WALLET PROFILE</b>
-────────────────────────────────
-💰 <b>Current Balance:</b> <code>₹{balance:.2f}</code>
-🏦 <b>Gateway Channel:</b> Automated Live UPI Node
-
-⚠️ <i>To add funds to your runtime balance, tap the billing integration gateway button interface down below.</i>"""
-    await msg.answer(text=wallet_text, reply_markup=wallet_kb, parse_mode="HTML")
-
-# --- ADDED: EXPLICIT ACCOUNT PROFILE RECEIVER ---
-@dp.message(F.text == "👤 ACCOUNT PROFILE")
-async def show_account_profile(msg: Message):
-    uid = msg.from_user.id
-    balance = get_user_bal(uid)
-    join_date = get_user_profile_data(uid)
+    if claim_id not in pending_claims:
+        await cb.message.edit_text("❌ This transaction claim tracking context has expired.")
+        return
+        
+    uid = pending_claims[claim_id]["uid"]
+    txn = pending_claims[claim_id]["txn"]
     
-    profile_text = f"""👤 <b>SKY STATIONS SYSTEM IDENTIFICATION</b>
-────────────────────────────────
-🆔 <b>User Telegram ID:</b> <code>{uid}</code>
-📊 <b>Available Assets:</b> ₹{balance:.2f}
-📅 <b>Node Activation Date:</b> {join_date}
-
-🛡️ <i>Your access tokens are authorized across independent multi-region validation databases.</i>"""
-    await msg.answer(text=profile_text, parse_mode="HTML")
-
-@dp.callback_query(F.data.startswith("select_co_"))
-async def show_confirmation_screen(cb: CallbackQuery):
-    country_id = cb.data.replace("select_co_", "")
-    country = next((c for c in COUNTRY_SERVICES if c["id"] == country_id), None)
-    if not country: 
-        return await cb.answer("❌ Selected listing context metadata corrupted.")
+    pending_claims[claim_id]["session_amt"] += add_amt
+    current_total = pending_claims[claim_id]["session_amt"]
     
-    stock = get_stock_count(country_id)
-    confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💎 INITIALIZE TRANSACTION", callback_data=f"conf_buy_{country['id']}")],
-        [InlineKeyboardButton(text="❌ ABORT PURSUIT", callback_data="cancel_action")]
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE users SET balance = balance + ? WHERE uid = ?", (add_amt, uid))
+        conn.commit()
+        
+    await cb.answer(f"Added +₹{add_amt}")
+    
+    akb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ ₹1", callback_data=f"add:{claim_id}:1"), InlineKeyboardButton(text="➕ ₹5", callback_data=f"add:{claim_id}:5")],
+        [InlineKeyboardButton(text="➕ ₹10", callback_data=f"add:{claim_id}:10"), InlineKeyboardButton(text="➕ ₹50", callback_data=f"add:{claim_id}:50")],
+        [InlineKeyboardButton(text="➕ ₹100", callback_data=f"add:{claim_id}:100"), InlineKeyboardButton(text="➕ ₹500", callback_data=f"add:{claim_id}:500")],
+        [InlineKeyboardButton(text=f"📩 Confirm & Send ₹{current_total}", callback_data=f"send:{claim_id}")],
+        [InlineKeyboardButton(text="❌ Decline Request", callback_data=f"deny:{claim_id}")]
     ])
+    await cb.message.edit_text(text=f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{current_total}", reply_markup=akb, parse_mode="HTML")
+
+@dp.callback_query(F.data.startswith("send:"))
+async def admin_send_receipt_click(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_TELEGRAM_ID: return
+    claim_id = cb.data.split(":")[1]
     
-    confirmation_text = f"""📋 <b>DIGITAL INVENTORY REVIEW INVOICE</b>
-────────────────────────────────
-👋 Hello buyer, checking current server node paths. Confirm your purchase reservation metrics details below:
+    if claim_id not in pending_claims:
+        await cb.message.edit_text("❌ This payment tracking session context has expired.")
+        return
+        
+    uid = pending_claims[claim_id]["uid"]
+    txn = pending_claims[claim_id]["txn"]
+    final_session_amt = pending_claims[claim_id]["session_amt"]
+    
+    del pending_claims[claim_id]
+    
+    current_bal = get_user_bal(uid)
+    await cb.message.edit_text(f"✅ Approved and sent receipt total of ₹{final_session_amt} to user <code>{uid}</code>.")
+    
+    rcpt = f"✅ <b>Payment Confirmed!</b>\n\n<b>Transaction ID:</b> <code>{txn}</code>\n<b>Amount Added:</b> ₹{final_session_amt}\n<b>Current Total Balance:</b> ₹{current_bal}\n\nThank you for choosing SKY OTP!"
+    try: await bot.send_message(chat_id=uid, text=rcpt, parse_mode="HTML")
+    except Exception: pass
 
-🌍 <b>Target Country:</b> {country['flag']} {country['name']}
-💸 <b>Service Cost:</b> <b>₹{country['price']}</b>
-📦 <b>Node Stock:</b> <b>{stock} channels active</b>
+@dp.callback_query(F.data.startswith("deny:"))
+async def admin_deny_click(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_TELEGRAM_ID: return
+    claim_id = cb.data.split(":")[1]
+    
+    if claim_id in pending_claims:
+        uid = pending_claims[claim_id]["uid"]
+        del pending_claims[claim_id]
+        await cb.message.edit_text(f"❌ Denied request from user <code>{uid}</code>.")
+        try: await bot.send_message(chat_id=uid, text="❌ Your transaction review request was declined by the administrator.")
+        except Exception: pass
 
-⚠️ <i>Funds are securely deducted only upon successful OTP receipt callback validation rules.</i>"""
+@dp.callback_query(F.data == "cancel")
+async def cancel_click(cb: CallbackQuery):
+    try: await cb.message.delete()
+    except Exception: pass
 
-    await cb.message.edit_text(text=confirmation_text, reply_markup=confirm_kb, parse_mode="HTML")
+async def main():
+    init_db()
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
 
-@dp.callback_query(F.data == "cancel_action")
-async def process_cancel_action(cb: CallbackQuery):
-    await cb.answer("Transaction canceled.")
-    await cb.message.edit_text(
-        text="❌ <b>Transaction Aborted.</b>\n\nYour deployment attempt was stopped safely. Use the main menu to restart the store selection pipeline.",
-        parse_mode="HTML"
-    )
-
-@dp.callback_query(F.data.startswith("conf_buy_"))
-async def execute_internal_purchase(cb: CallbackQuery):
+# FIXED: Structural blocks completely filled and fully aligned to remove all IndentationErrors
+if __name__ == "__main__":
+    while True:
+        try:
+            asyncio.run(main())
+        except (KeyboardInterrupt, SystemExit):
+            logging.info("Bot manually shut down.")
+            break
+        except Exception as error:
+            logging.error(f"Restarting loop due to error: {error}")

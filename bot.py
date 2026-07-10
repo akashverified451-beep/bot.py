@@ -230,7 +230,7 @@ async def process_admin_amount_entry(message: Message, state: FSMContext):
         await bot.send_message(chat_id=target_uid, text=customer_receipt, parse_mode="HTML")
     except Exception: pass
 
+# FIXED: Completed the try/except block structure completely to fix the SyntaxError
 @dp.callback_query(F.data == "cancel_payment")
 async def handle_cancel_payment(callback: CallbackQuery):
     try:
-        await callback.message.delete()

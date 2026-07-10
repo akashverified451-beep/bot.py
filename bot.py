@@ -20,48 +20,43 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
-
 DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
 
 class AdminStates(StatesGroup):
     waiting_for_admin_amount = State()
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            uid INTEGER PRIMARY KEY,
-            balance INTEGER DEFAULT 0,
-            join_date TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                uid INTEGER PRIMARY KEY,
+                balance INTEGER DEFAULT 0,
+                join_date TEXT
+            )
+        ''')
+        conn.commit()
 
-def get_user(uid):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT balance, join_date FROM users WHERE uid = ?", (uid,))
-    row = cursor.fetchone()
-    conn.close()
-    return row
+def get_user_data(uid):
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT balance, join_date FROM users WHERE uid = ?", (uid,))
+        return cursor.fetchone()
 
 def register_user(uid):
-    if not get_user(uid):
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (?, ?, ?)", (uid, 0, now))
-        conn.commit()
-        conn.close()
+    if get_user_data(uid) is None:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (?, 0, ?)", (uid, now))
+            conn.commit()
 
 def update_balance(uid, amount):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET balance = balance + ? WHERE uid = ?", (amount, uid))
-    conn.commit()
-    conn.close()
+    register_user(uid)
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET balance = balance + ? WHERE uid = ?", (amount, uid))
+        conn.commit()
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -81,15 +76,64 @@ def get_balance_reply_keyboard():
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message):
-    uid = message.from_user.id
-    register_user(uid)
+    register_user(message.from_user.id)
     await message.answer("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", reply_markup=get_main_keyboard())
 
+# --- ADMIN INPUT CAPTURE (Placed strictly first to isolate text capture) ---
+@dp.message(AdminStates.waiting_for_admin_amount)
+async def process_admin_amount_entry(message: Message, state: FSMContext):
+    if message.from_user.id != ADMIN_TELEGRAM_ID:
+        return
+        
+    text_input = message.text.strip()
+    if not text_input.isdigit():
+        await message.answer("❌ Invalid input. Please write numbers only (e.g., 50 or 500):")
+        return
+        
+    credit_amount = int(text_input)
+    if credit_amount <= 0:
+        await message.answer("❌ The amount must be greater than 0. Enter a valid value:")
+        return
+        
+    state_data = await state.get_data()
+    target_uid = state_data.get("approve_target_uid")
+    old_msg_id = state_data.get("admin_msg_id")
+    txn_id = state_data.get("txn_id")
+    await state.clear()
+    
+    user_data = get_user_data(target_uid)
+    previous_balance = user_data[0] if user_data else 0
+    new_balance = previous_balance + credit_amount
+    
+    update_balance(target_uid, credit_amount)
+    
+    await message.answer(f"✅ Successfully accredited ₹{credit_amount} to user <code>{target_uid}</code>.", parse_mode="HTML")
+    
+    try:
+        await bot.edit_message_text(chat_id=ADMIN_TELEGRAM_ID, message_id=old_msg_id, text=f"✅ Approved & added ₹{credit_amount} for <code>{target_uid}</code>.", parse_mode="HTML")
+    except Exception:
+        pass
+    
+    customer_receipt = (
+        f"✅ <b>Payment Confirmed!</b>\n\n"
+        f"<b>Transaction ID:</b> <code>{txn_id}</code>\n"
+        f"<b>Amount:</b> ₹{credit_amount}\n"
+        f"<b>Previous Balance:</b> ₹{previous_balance}\n"
+        f"<b>New Balance:</b> ₹{new_balance}\n\n"
+        f"Thank you for your payment!"
+    )
+    
+    try:
+        await bot.send_message(chat_id=target_uid, text=customer_receipt, parse_mode="HTML")
+    except Exception:
+        pass
+
+# --- STANDARD USER INTERFACE HANDLERS ---
 @dp.message(StateFilter(None), F.text == "💼 Wallet")
 async def balance_handler(message: Message):
     uid = message.from_user.id
     register_user(uid)
-    user_data = get_user(uid)
+    user_data = get_user_data(uid)
     bal = user_data[0] if user_data else 0
     await message.answer(text=f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", reply_markup=get_balance_reply_keyboard(), parse_mode="HTML")
 
@@ -97,7 +141,7 @@ async def balance_handler(message: Message):
 async def profile_handler(message: Message):
     uid = message.from_user.id
     register_user(uid)
-    user_data = get_user(uid)
+    user_data = get_user_data(uid)
     bal = user_data[0] if user_data else 0
     jd = user_data[1] if user_data else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await message.answer(text=f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{bal}\n📅 <b>Join Date:</b> {jd}", parse_mode="HTML")
@@ -147,6 +191,7 @@ async def process_add_funds_text(message: Message, state: FSMContext):
         logging.error(f"Failed to send QR: {err}")
         await message.answer("❌ System processing error. Please contact the administrator.")
 
+# --- INLINE INTERACTIVE BUTTON CALLBACKS ---
 @dp.callback_query(F.data.startswith("req_"))
 async def handle_user_verification_request(callback: CallbackQuery):
     _, uid, txn_id = callback.data.split("_")
@@ -181,55 +226,3 @@ async def handle_admin_decision(callback: CallbackQuery, state: FSMContext):
     elif action == "deny":
         await callback.message.edit_text(text=f"❌ Denied request from user <code>{target_uid}</code>.", parse_mode="HTML")
         try:
-            await bot.send_message(chat_id=target_uid, text="❌ Your transaction review request was declined by the administrator.", parse_mode="HTML")
-        except Exception: pass
-
-@dp.message(AdminStates.waiting_for_admin_amount)
-async def process_admin_amount_entry(message: Message, state: FSMContext):
-    if message.from_user.id != ADMIN_TELEGRAM_ID:
-        return
-        
-    text_input = message.text.strip()
-    if not text_input.isdigit():
-        await message.answer("❌ Invalid input. Please write numbers only (e.g., 50 or 500):")
-        return
-        
-    credit_amount = int(text_input)
-    if credit_amount <= 0:
-        await message.answer("❌ The amount must be greater than 0. Enter a valid value:")
-        return
-        
-    state_data = await state.get_data()
-    target_uid = state_data.get("approve_target_uid")
-    old_msg_id = state_data.get("admin_msg_id")
-    txn_id = state_data.get("txn_id")
-    await state.clear()
-    
-    user_data = get_user(target_uid)
-    previous_balance = user_data[0] if user_data else 0
-    new_balance = previous_balance + credit_amount
-    
-    update_balance(target_uid, credit_amount)
-    
-    await message.answer(f"✅ Successfully accredited ₹{credit_amount} to user <code>{target_uid}</code>.", parse_mode="HTML")
-    
-    try:
-        await bot.edit_message_text(chat_id=ADMIN_TELEGRAM_ID, message_id=old_msg_id, text=f"✅ Approved & added ₹{credit_amount} for <code>{target_uid}</code>.", parse_mode="HTML")
-    except Exception: pass
-    
-    customer_receipt = (
-        f"✅ <b>Payment Confirmed!</b>\n\n"
-        f"<b>Transaction ID:</b> <code>{txn_id}</code>\n"
-        f"<b>Amount:</b> ₹{credit_amount}\n"
-        f"<b>Previous Balance:</b> ₹{previous_balance}\n"
-        f"<b>New Balance:</b> ₹{new_balance}\n\n"
-        f"Thank you for your payment!"
-    )
-    
-    try:
-        await bot.send_message(chat_id=target_uid, text=customer_receipt, parse_mode="HTML")
-    except Exception: pass
-
-# FIXED: Completed the try/except block structure completely to fix the SyntaxError
-@dp.callback_query(F.data == "cancel_payment")
-async def handle_cancel_payment(callback: CallbackQuery):

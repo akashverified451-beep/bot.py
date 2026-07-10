@@ -1,12 +1,12 @@
 import os
 import random
 import logging
-import asyncio
 import io
 import sqlite3
 from datetime import datetime
+from aiohttp import web
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile, Update
 from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -15,10 +15,16 @@ import qrcode
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+# Variables configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
+
+# Render automatically gives you your unique service domain URL as an environment variable
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
+WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
+WEBHOOK_URL = f"{RENDER_EXTERNAL_URL}{WEBHOOK_PATH}"
 
 class DepositStates(StatesGroup):
     waiting_for_screenshot = State()
@@ -107,11 +113,10 @@ async def add_funds_handler(msg: Message):
 @dp.callback_query(F.data.startswith("req_"))
 async def handle_status_check(cb: CallbackQuery, state: FSMContext):
     parts = cb.data.split("_")
-    uid, txn = parts[1], parts[2]
-    
+    uid = parts[1]
+    txn = parts[2]
     await state.set_state(DepositStates.waiting_for_screenshot)
     await state.update_data(txn=txn)
-    
     await cb.answer()
     await cb.message.answer("📸 Please send a <b>screenshot of your payment receipt</b> now to submit for admin approval:", parse_mode="HTML")
 
@@ -132,7 +137,6 @@ async def process_screenshot_submission(msg: Message, state: FSMContext):
         [InlineKeyboardButton(text="📩 Confirm & Send Receipt", callback_data=f"send_{uid}_{txn}_0")],
         [InlineKeyboardButton(text="❌ Decline Request", callback_data=f"deny_{uid}")]
     ])
-    
     await bot.send_photo(chat_id=ADMIN_TELEGRAM_ID, photo=photo_id, caption=f"🚨 <b>New Deposit Verification Request!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0", reply_markup=akb, parse_mode="HTML")
 
 @dp.message(DepositStates.waiting_for_screenshot)
@@ -143,7 +147,9 @@ async def invalid_screenshot_submission(msg: Message):
 async def admin_add_click(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_TELEGRAM_ID: return
     parts = cb.data.split("_")
-    uid, txn, amt = int(parts[1]), parts[2], int(parts[3])
+    uid = int(parts[1])
+    txn = parts[2]
+    amt = int(parts[3])
     
     current_caption = cb.message.caption if cb.message.caption else ""
     session_amt = 0
@@ -162,14 +168,15 @@ async def admin_add_click(cb: CallbackQuery):
         [InlineKeyboardButton(text=f"📩 Confirm & Send ₹{new_session_total}", callback_data=f"send_{uid}_{txn}_{new_session_total}")],
         [InlineKeyboardButton(text="❌ Decline Request", callback_data=f"deny_{uid}")]
     ])
-    # FIXED: Replaced edit_text with edit_caption because the original admin notification is an image payload card
     await cb.message.edit_caption(caption=f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{new_session_total}", reply_markup=akb, parse_mode="HTML")
 
 @dp.callback_query(F.data.startswith("send_"))
 async def admin_send_receipt_click(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_TELEGRAM_ID: return
     parts = cb.data.split("_")
-    uid, txn, final_session_amt = int(parts[1]), parts[2], int(parts[3])
+    uid = int(parts[1])
+    txn = parts[2]
+    final_session_amt = int(parts[3])
     
     current_bal = get_user_bal(uid)
     await cb.message.edit_caption(caption=f"✅ Approved and sent receipt total of ₹{final_session_amt} to user <code>{uid}</code>.")
@@ -186,10 +193,3 @@ async def admin_deny_click(cb: CallbackQuery):
     try: await bot.send_message(chat_id=uid, text="❌ Your transaction review request was declined by the administrator.")
     except Exception: pass
 
-@dp.callback_query(F.data == "cancel")
-async def cancel_click(cb: CallbackQuery):
-    try: await cb.message.delete()
-    except Exception: pass
-
-async def main():
-    init_db()

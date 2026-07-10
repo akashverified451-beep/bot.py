@@ -5,5 +5,4 @@ qrcode[pillow]
 pillow
 psycopg==3.2.4
 psycopg-binary
-fastapi
-uvicorn
+httpx

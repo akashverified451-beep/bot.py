@@ -11,7 +11,7 @@ from aiogram.fsm.context import FSMContext
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# --- INITIAL CORES AND ASSIGNMENTS ---
+# --- INITIAL CONFIGURATION AND CORE SETTINGS ---
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
@@ -26,7 +26,7 @@ class AddNumberState(StatesGroup):
 def get_db_connection():
     return psycopg.connect(DATABASE_URL)
 
-# --- 1. DATABASE ACCESS MANAGERS ---
+# --- DATABASE SCHEMA INTERFACE LAYER ---
 def init_db():
     try:
         with get_db_connection() as conn:
@@ -86,7 +86,7 @@ def get_user_bal(uid):
     except Exception:
         return 0.00
 
-# --- 2. REGION ASSIGNMENTS AND KEYBOARD BUILDERS ---
+# --- STORE REGION ASSIGNMENTS ---
 COUNTRY_SERVICES = [
     {"id": "colombia", "name": "Colombia", "flag": "🇨🇴", "price": 36.29},
     {"id": "nigeria", "name": "Nigeria", "flag": "🇳🇬", "price": 36.29},
@@ -119,7 +119,7 @@ def generate_services_keyboard() -> InlineKeyboardMarkup:
         ])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-# --- 3. INCOMING CHAT AND CALLBACK LOGIC ROUTER ---
+# --- BOT ROUTING ENGINE AND UI HANDLERS ---
 @dp.message(CommandStart())
 async def cmd_start(msg: Message):
     uid = msg.from_user.id
@@ -190,7 +190,7 @@ async def execute_internal_purchase(cb: CallbackQuery):
         logging.error(f"Database purchase statement failure: {purchase_err}")
         await cb.message.edit_text("❌ A transactional loop error occurred. Please try again.")
 
-# --- 4. SECURE ADMINISTRATIVE CHAT PORTALS ---
+# --- ADMIN FUNCTIONS CONTROLLER LAYER ---
 @dp.message(Command("addnumber"))
 async def start_add_number(msg: Message, state: FSMContext):
     if msg.from_user.id != ADMIN_TELEGRAM_ID: return

@@ -23,7 +23,7 @@ WEBHOOK_URL = f"{RENDER_EXTERNAL_URL}/webhook"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-app = FastAPI() # Production API gateway wrapper instance
+app = FastAPI()
 
 class AddNumberState(StatesGroup):
     waiting_for_data = State()

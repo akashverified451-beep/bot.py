@@ -3,10 +3,12 @@ import random
 import logging
 import io
 import sqlite3
+import asyncio
 from datetime import datetime
-from aiohttp import web
+from fastapi import FastAPI
+import uvicorn
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile, Update
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
 from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -15,16 +17,11 @@ import qrcode
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Variables configuration
+# Environmental Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
-
-# Render automatically gives you your unique service domain URL as an environment variable
-RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
-WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
-WEBHOOK_URL = f"{RENDER_EXTERNAL_URL}{WEBHOOK_PATH}"
 
 class DepositStates(StatesGroup):
     waiting_for_screenshot = State()
@@ -57,6 +54,7 @@ def update_balance(uid, amount):
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
+# Keyboards
 def main_kb():
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="🛍️ Buy Telegram Account")],
@@ -70,6 +68,7 @@ def balance_kb():
         [KeyboardButton(text="🔙 Back to Main Menu")]
     ], resize_keyboard=True)
 
+# Main Handlers
 @dp.message(CommandStart())
 async def cmd_start(msg: Message):
     register_user(msg.from_user.id)
@@ -193,3 +192,9 @@ async def admin_deny_click(cb: CallbackQuery):
     try: await bot.send_message(chat_id=uid, text="❌ Your transaction review request was declined by the administrator.")
     except Exception: pass
 
+@dp.callback_query(F.data == "cancel")
+async def cancel_click(cb: CallbackQuery):
+    try: await cb.message.delete()
+    except Exception: pass
+
+# --- FASTAPI SERVER ENGINE ---

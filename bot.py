@@ -12,6 +12,8 @@ from aiogram.types import (
 from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
+import qrcode
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -62,7 +64,8 @@ def update_balance(uid, amount):
     conn.close()
 
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+# FIXED: Explicit MemoryStorage keeps FSM state parameters contextually active and alive on Render
+dp = Dispatcher(storage=MemoryStorage())
 
 def get_main_keyboard():
     return ReplyKeyboardMarkup(keyboard=[
@@ -111,7 +114,6 @@ async def buy_telegram_account_handler(message: Message):
 
 @dp.message(StateFilter(None), F.text == "➕ Add Funds")
 async def process_add_funds_text(message: Message, state: FSMContext):
-    import qrcode
     await state.clear()
     uid = message.from_user.id
     txn_id = "".join([str(random.randint(0, 9)) for _ in range(15)])
@@ -204,12 +206,10 @@ async def process_admin_amount_entry(message: Message, state: FSMContext):
     txn_id = state_data.get("txn_id")
     await state.clear()
     
-    # 1. Fetch current profile statistics before balance updates occur
     user_data = get_user(target_uid)
     previous_balance = user_data[0] if user_data else 0
     new_balance = previous_balance + credit_amount
     
-    # 2. Add requested amount into balance spreadsheet 
     update_balance(target_uid, credit_amount)
     
     await message.answer(f"✅ Successfully accredited ₹{credit_amount} to user <code>{target_uid}</code>.", parse_mode="HTML")
@@ -218,7 +218,6 @@ async def process_admin_amount_entry(message: Message, state: FSMContext):
         await bot.edit_message_text(chat_id=ADMIN_TELEGRAM_ID, message_id=old_msg_id, text=f"✅ Approved & added ₹{credit_amount} for <code>{target_uid}</code>.", parse_mode="HTML")
     except Exception: pass
     
-    # 3. Deliver customized breakdown log receipt directly to customer dashboard
     customer_receipt = (
         f"✅ <b>Payment Confirmed!</b>\n\n"
         f"<b>Transaction ID:</b> <code>{txn_id}</code>\n"
@@ -232,3 +231,4 @@ async def process_admin_amount_entry(message: Message, state: FSMContext):
         await bot.send_message(chat_id=target_uid, text=customer_receipt, parse_mode="HTML")
     except Exception: pass
 
+@dp.callback_query(F.data == "cancel_payment")

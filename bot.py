@@ -1,6 +1,7 @@
 import os
 import logging
 import psycopg
+import asyncio
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -8,6 +9,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 
+# Enable comprehensive debug tracking logs
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
@@ -22,10 +24,11 @@ class AddNumberState(StatesGroup):
     waiting_for_data = State()
 
 def get_db_connection():
-    """Establishes an isolated bridge line with the Render PostgreSQL engine."""
-    return psycopg.connect(DATABASE_URL)
+    """Establishes an explicit connection instance with robust timeout settings."""
+    return psycopg.connect(DATABASE_URL, connect_timeout=10)
 
 def init_db():
+    """Ensures database schemas exist without hanging up the engine loop."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -60,9 +63,11 @@ def init_db():
                     )
                 """)
                 conn.commit()
-                logging.info("Database initialization completed successfully.")
+                logging.info("🚀 Database schema initialization successful.")
+                return True
     except Exception as db_err:
-        logging.critical(f"CRITICAL: Failed to initialize schema layout: {db_err}")
+        logging.error(f"⚠️ Database initialization failed (retrying later): {db_err}")
+        return False
 
 def get_stock_count(country_id):
     try:
@@ -70,7 +75,6 @@ def get_stock_count(country_id):
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) FROM available_accounts WHERE country_id = %s AND is_sold = FALSE", (country_id,))
                 row = cur.fetchone()
-                # FIXED: Unpack the first index from the tuple structure safely
                 return row[0] if row else 0
     except Exception as e:
         logging.error(f"Error fetching stock count target: {e}")
@@ -82,7 +86,6 @@ def get_user_bal(uid):
             with conn.cursor() as cur:
                 cur.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
                 row = cur.fetchone()
-                # FIXED: Extract tuple numeric value safely
                 return float(row[0]) if row else 0.00
     except Exception as e:
         logging.error(f"Error extracting user balance profile item: {e}")
@@ -205,4 +208,3 @@ async def execute_internal_purchase(cb: CallbackQuery):
 @dp.message(Command("addnumber"))
 async def start_add_number(msg: Message, state: FSMContext):
     if msg.from_user.id != ADMIN_TELEGRAM_ID: return
-    await msg.answer("📥 Format: <code>country_id | phone_number | api_id | api_hash | string_session</code>", parse_mode="HTML")

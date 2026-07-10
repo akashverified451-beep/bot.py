@@ -3,6 +3,5 @@ aiohttp>=3.9.5
 Telethon>=1.36.0
 qrcode[pillow]
 pillow
-pillow
 fastapi
 uvicorn

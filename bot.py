@@ -225,10 +225,7 @@ async def process_admin_amount_entry(message: Message, state: FSMContext):
         f"<b>Amount:</b> ₹{credit_amount}\n"
         f"<b>Previous Balance:</b> ₹{previous_balance}\n"
         f"<b>New Balance:</b> ₹{new_balance}\n\n"
-        f"Thank you for your payment!"
-    )
+        f"Thank you for your payment!")
     
-    try:
-        await bot.send_message(chat_id=target_uid, text=customer_receipt, parse_mode="HTML")
-    except Exception: pass
-
+    if __name__ == "__main__":
+    asyncio.run(main())

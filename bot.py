@@ -22,7 +22,7 @@ class AddNumberState(StatesGroup):
     waiting_for_data = State()
 
 def get_db_connection():
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg.connect(DATABASE_URL)
 
 def init_db():
     with get_db_connection() as conn:

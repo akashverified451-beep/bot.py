@@ -17,7 +17,6 @@ ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
 
-# Simple operational tracking metrics storage dictionary
 pending_claims = {}
 
 def init_db():
@@ -84,7 +83,6 @@ async def add_funds_handler(msg: Message):
     uid = msg.from_user.id
     txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
     
-    # Store request using a flat tracking key dictionary mapping 
     claim_id = str(random.randint(1000, 9999))
     pending_claims[claim_id] = {"uid": uid, "txn": txn, "session_amt": 0}
     
@@ -135,7 +133,6 @@ async def admin_add_click(cb: CallbackQuery):
     uid = pending_claims[claim_id]["uid"]
     txn = pending_claims[claim_id]["txn"]
     
-    # Update flat dictionary value counters inside working tracking parameters 
     pending_claims[claim_id]["session_amt"] += add_amt
     current_total = pending_claims[claim_id]["session_amt"]
     
@@ -157,7 +154,7 @@ async def admin_add_click(cb: CallbackQuery):
 @dp.callback_query(F.data.startswith("send:"))
 async def admin_send_receipt_click(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_TELEGRAM_ID: return
-    claim_id = cb.data.split(":")[-1]
+    claim_id = cb.data.split(":")[1]
     
     if claim_id not in pending_claims:
         await cb.message.edit_text("❌ This payment tracking session context has expired.")
@@ -167,7 +164,6 @@ async def admin_send_receipt_click(cb: CallbackQuery):
     txn = pending_claims[claim_id]["txn"]
     final_session_amt = pending_claims[claim_id]["session_amt"]
     
-    # Remove tracked memory profile reference payload signatures cleanly
     del pending_claims[claim_id]
     
     current_bal = get_user_bal(uid)
@@ -180,7 +176,7 @@ async def admin_send_receipt_click(cb: CallbackQuery):
 @dp.callback_query(F.data.startswith("deny:"))
 async def admin_deny_click(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_TELEGRAM_ID: return
-    claim_id = cb.data.split(":")[-1]
+    claim_id = cb.data.split(":")[1]
     
     if claim_id in pending_claims:
         uid = pending_claims[claim_id]["uid"]
@@ -199,8 +195,13 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
+# FIXED: Structural blocks completely filled and fully aligned to remove all IndentationErrors
 if __name__ == "__main__":
     while True:
         try:
             asyncio.run(main())
         except (KeyboardInterrupt, SystemExit):
+            logging.info("Bot manually shut down.")
+            break
+        except Exception as error:
+            logging.error(f"Restarting loop due to error: {error}")

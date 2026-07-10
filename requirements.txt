@@ -1,0 +1,5 @@
+aiogram>=3.10.0
+aiohttp>=3.9.5
+Telethon>=1.36.0
+qrcode
+pillow

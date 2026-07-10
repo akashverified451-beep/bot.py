@@ -9,20 +9,30 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 
+# --- LOGGING CONFIGURATION ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # --- CORE PARAMS & ENVIRONMENT CONFIG ---
+# Fallbacks are kept for local testing, but Render environment variables take precedence
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
-DATABASE_URL = os.getenv("postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db")
 
+# FIXED: Correct placement of fallback string inside os.getenv()
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", 
+    "postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db"
+)
+
+# Initialize Bot and Dispatcher instances
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# --- FSM STATES ---
 class AddNumberState(StatesGroup):
     waiting_for_data = State()
 
+# --- DATABASE CONNECTION UTILITY ---
 def get_db_connection():
     return psycopg.connect(DATABASE_URL)
 
@@ -73,7 +83,8 @@ def get_stock_count(country_id):
                 cur.execute("SELECT COUNT(*) FROM available_accounts WHERE country_id = %s AND is_sold = FALSE", (country_id,))
                 row = cur.fetchone()
                 return row[0] if row else 0
-    except Exception:
+    except Exception as e:
+        logging.error(f"Error fetching stock count: {e}")
         return 0
 
 def get_user_bal(uid):
@@ -83,7 +94,8 @@ def get_user_bal(uid):
                 cur.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
                 row = cur.fetchone()
                 return float(row[0]) if row else 0.00
-    except Exception:
+    except Exception as e:
+        logging.error(f"Error fetching user balance: {e}")
         return 0.00
 
 # --- PREMIUM STYLED PLATFORM CONFIGURATION ---
@@ -179,42 +191,43 @@ async def show_confirmation_screen(cb: CallbackQuery):
 
     await cb.message.edit_text(text=confirmation_text, reply_markup=confirm_kb, parse_mode="HTML")
 
+# FIXED: Cancel Action Handler Implementation
+@dp.callback_query(F.data == "cancel_action")
+async def process_cancel_action(cb: CallbackQuery):
+    await cb.answer("Transaction canceled.")
+    await cb.message.edit_text(
+        text="❌ <b>Transaction Aborted.</b>\n\nYour deployment attempt was stopped safely. Use the main menu to restart the store selection pipeline.",
+        parse_mode="HTML"
+    )
+
+# FIXED: Completed Internal Purchase Handoff Processing 
 @dp.callback_query(F.data.startswith("conf_buy_"))
 async def execute_internal_purchase(cb: CallbackQuery):
     uid = cb.from_user.id
     country_id = cb.data.replace("conf_buy_", "")
     country = next((c for c in COUNTRY_SERVICES if c["id"] == country_id), None)
     
+    if not country:
+        return await cb.answer("❌ Context tracking lost. Restart search.")
+        
+    stock = get_stock_count(country_id)
+    if stock <= 0:
+        return await cb.message.edit_text("❌ <b>Out of Stock!</b>\n\nThis target country node empty state changed while navigating checkout.", parse_mode="HTML")
+
     user_balance = get_user_bal(uid)
     if user_balance < country["price"]:
         decline_text = f"""❌ <b>TRANSACTION ATTEMPT REJECTED</b>
 ────────────────────────────────
-💰 Your balance (<b>₹{user_balance}</b>) is too low.
-🏷️ This profile purchase block requires: <b>₹{country['price']}</b>
+⚠️ Insufficient funds inside your platform balance interface wallet.
 
-👉 Please use the wallet panel to add credit instantly."""
+💰 <b>Your Balance:</b> ₹{user_balance:.2f}
+📈 <b>Required Cost:</b> ₹{country['price']:.2f}
+
+💳 Please tap the <i>'MY WALLET'</i> layout to top up your balance configuration profile instantly."""
         return await cb.message.edit_text(text=decline_text, parse_mode="HTML")
-
+    
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, phone_number FROM available_accounts WHERE country_id = %s AND is_sold = FALSE LIMIT 1 FOR UPDATE", (country_id,))
-                account = cur.fetchone()
-                if not account:
-                    return await cb.message.edit_text("❌ <b>OUT OF STOCK!</b>\n\nAll session lines for this localized tier are currently locked or depleted.")
-                    
-                account_id = account[0]
-                phone_number = account[1]
-                cur.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (country["price"], uid))
-                cur.execute("UPDATE available_accounts SET is_sold = TRUE WHERE id = %s", (account_id,))
-                cur.execute("INSERT INTO active_orders (uid, account_id, phone_number, country_name, cost_inr, status, timestamp) VALUES (%s, %s, %s, %s, %s, 'WAITING', %s)", (uid, account_id, phone_number, country["name"], country["price"], datetime.now().isoformat()))
-                conn.commit()
-                
-        allocated_text = f"""📱 <b>VIRTUAL SYSTEM RESERVATION COMPLETE</b>
-────────────────────────────────
-🌍 <b>Country Node:</b> {country['name']} {country['flag']}
-🔢 <b>Allocated Line:</b> <code>{phone_number}</code>
-💳 <b>Charged Amount:</b> ₹{country['price']}
-
-👉 Copy-paste this phone number into your Telegram Client app now. The backend data streaming scraper is waiting for your verification code loop..."""
-        
+                # Retrieve an available unassigned slot for deployment
+                cur.execute(

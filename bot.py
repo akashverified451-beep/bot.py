@@ -95,6 +95,31 @@ def get_user_bal(uid):
         logging.error(f"Error fetching user balance: {e}")
         return 0.00
 
+# --- FIXED TRANSACTION HELPER (NO NESTING) ---
+def create_order_transaction(uid, country_id, country_name, country_price):
+    """Handles database check and insertion cleanly to prevent syntax nesting bugs."""
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, phone_number FROM available_accounts WHERE country_id = %s AND is_sold = FALSE LIMIT 1 FOR UPDATE", 
+                (country_id,)
+            )
+            account = cur.fetchone()
+            
+            if not account:
+                return None
+            
+            acc_id = account[0]
+            phone_num = account[1]
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            cur.execute(
+                "INSERT INTO active_orders (uid, account_id, phone_number, country_name, cost_inr, status, timestamp) VALUES (%s, %s, %s, %s, %s, 'WAITING', %s)",
+                (uid, acc_id, phone_num, country_name, country_price, now_str)
+            )
+            conn.commit()
+            return phone_num
+
 # --- PREMIUM STYLED PLATFORM CONFIGURATION ---
 COUNTRY_SERVICES = [
     {"id": "colombia", "name": "Colombia", "flag": "🇨🇴", "price": 36.29},
@@ -194,7 +219,7 @@ async def process_cancel_action(cb: CallbackQuery):
         parse_mode="HTML"
     )
 
-# --- INDENTATION FIXED CHECKOUT TRANSACTION SYSTEM ---
+# --- CLEAN EXECUTE PURCHASE (ZERO DEEP NESTING) ---
 @dp.callback_query(F.data.startswith("conf_buy_"))
 async def execute_internal_purchase(cb: CallbackQuery):
     uid = cb.from_user.id
@@ -206,28 +231,3 @@ async def execute_internal_purchase(cb: CallbackQuery):
         
     stock = get_stock_count(country_id)
     if stock <= 0:
-        return await cb.message.edit_text("❌ <b>Out of Stock!</b>\n\nThis target country node empty state changed while navigating checkout.", parse_mode="HTML")
-
-    user_balance = get_user_bal(uid)
-    if user_balance < country["price"]:
-        decline_text = f"""❌ <b>TRANSACTION ATTEMPT REJECTED</b>
-────────────────────────────────
-⚠️ Insufficient funds inside your platform balance interface wallet.
-
-💰 <b>Your Balance:</b> ₹{user_balance:.2f}
-📈 <b>Required Cost:</b> ₹{country['price']:.2f}
-
-💳 Please tap the <i>'MY WALLET'</i> layout to top up your balance configuration profile instantly."""
-        return await cb.message.edit_text(text=decline_text, parse_mode="HTML")
-    
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id, phone_number FROM available_accounts WHERE country_id = %s AND is_sold = FALSE LIMIT 1 FOR UPDATE", 
-                    (country_id,)
-                )
-                account = cur.fetchone()
-                
-                # FIXED: Strictly formatted 100% uniform indentation spacing block
-                if not account:

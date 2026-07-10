@@ -13,18 +13,15 @@ from aiogram.fsm.context import FSMContext
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # --- CORE PARAMS & ENVIRONMENT CONFIG ---
-# Fallbacks are kept for local testing, but Render environment variables take precedence
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 
-# FIXED: Correct placement of fallback string inside os.getenv()
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
     "postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db"
 )
 
-# Initialize Bot and Dispatcher instances
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -117,8 +114,6 @@ def main_kb():
 
 def generate_services_keyboard() -> InlineKeyboardMarkup:
     keyboard = []
-    
-    # Modern Informational Header Row Block
     keyboard.append([
         InlineKeyboardButton(text="🌐 COUNTRY PLATFORM", callback_data="noop"),
         InlineKeyboardButton(text="💎 RATE", callback_data="noop"),
@@ -191,7 +186,6 @@ async def show_confirmation_screen(cb: CallbackQuery):
 
     await cb.message.edit_text(text=confirmation_text, reply_markup=confirm_kb, parse_mode="HTML")
 
-# FIXED: Cancel Action Handler Implementation
 @dp.callback_query(F.data == "cancel_action")
 async def process_cancel_action(cb: CallbackQuery):
     await cb.answer("Transaction canceled.")
@@ -200,7 +194,7 @@ async def process_cancel_action(cb: CallbackQuery):
         parse_mode="HTML"
     )
 
-# FIXED: Completed Internal Purchase Handoff Processing 
+# --- FIXED CHECKOUT TRANSACTION SYSTEM ---
 @dp.callback_query(F.data.startswith("conf_buy_"))
 async def execute_internal_purchase(cb: CallbackQuery):
     uid = cb.from_user.id
@@ -229,5 +223,10 @@ async def execute_internal_purchase(cb: CallbackQuery):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # Retrieve an available unassigned slot for deployment
                 cur.execute(
+                    "SELECT id, phone_number FROM available_accounts WHERE country_id = %s AND is_sold = FALSE LIMIT 1 FOR UPDATE", 
+                    (country_id,)
+                )
+                account = cur.fetchone()
+                
+                if not account:

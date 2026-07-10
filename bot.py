@@ -1,29 +1,24 @@
 import os
 import logging
 import psycopg
+import asyncio
 from datetime import datetime
-from fastapi import FastAPI, Request
-import uvicorn
+import httpx
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Update
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# --- INITIAL CORES AND ASSIGNMENTS ---
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 DATABASE_URL = os.getenv("postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db")
-RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
-
-WEBHOOK_URL = f"{RENDER_EXTERNAL_URL}/webhook"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-app = FastAPI()
 
 class AddNumberState(StatesGroup):
     waiting_for_data = State()
@@ -31,7 +26,18 @@ class AddNumberState(StatesGroup):
 def get_db_connection():
     return psycopg.connect(DATABASE_URL)
 
-# --- 1. PERSISTENT STORAGE MANAGER ROUTINES ---
+async def keep_alive_loop():
+    """Background task that pings a public address to prevent Render from freezing the container."""
+    async with httpx.AsyncClient() as client:
+        while True:
+            try:
+                # Ping a neutral public endpoint to simulate active network traffic
+                await client.get("https://google.com", timeout=5.0)
+                logging.info("⏳ Keep-alive heartbeat signal sent successfully.")
+            except Exception as e:
+                logging.error(f"Heartbeat failed: {e}")
+            await asyncio.sleep(240)  # Pings every 4 minutes
+
 def init_db():
     try:
         with get_db_connection() as conn:
@@ -67,9 +73,9 @@ def init_db():
                     )
                 """)
                 conn.commit()
-                logging.info("🚀 System PostgreSQL Tables verified successfully.")
+                logging.info("🚀 PostgreSQL Tables verified successfully.")
     except Exception as e:
-        logging.error(f"PostgreSQL Init Failure Stack: {e}")
+        logging.error(f"PostgreSQL Init Failure: {e}")
 
 def get_stock_count(country_id):
     try:
@@ -91,7 +97,6 @@ def get_user_bal(uid):
     except Exception:
         return 0.00
 
-# --- 2. COUNTRY SHOP LAYOUT DEFINITION MATRIX ---
 COUNTRY_SERVICES = [
     {"id": "colombia", "name": "Colombia", "flag": "🇨🇴", "price": 36.29},
     {"id": "nigeria", "name": "Nigeria", "flag": "🇳🇬", "price": 36.29},
@@ -124,7 +129,6 @@ def generate_services_keyboard() -> InlineKeyboardMarkup:
         ])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-# --- 3. CUSTOMER SIDE INTERACTION INTERCEPTORS ---
 @dp.message(CommandStart())
 async def cmd_start(msg: Message):
     uid = msg.from_user.id
@@ -137,8 +141,8 @@ async def cmd_start(msg: Message):
                     cur.execute("INSERT INTO users (uid, balance, join_date) VALUES (%s, 0.00, %s)", (uid, now))
                     conn.commit()
     except Exception as e:
-        logging.error(f"Reg trace error: {e}")
-    await msg.answer("👋 Welcome to SKY OTP BOT.\n✨ Use panels below to purchase accounts.", reply_markup=main_kb())
+        logging.error(f"Reg error: {e}")
+    await msg.answer("👋 Welcome to SKY OTP BOT.\n✨ Use the store panels below to purchase accounts.", reply_markup=main_kb())
 
 @dp.message(F.text == "🛍️ Buy Telegram Account")
 async def show_tg_services(msg: Message):
@@ -148,7 +152,7 @@ async def show_tg_services(msg: Message):
 async def show_confirmation_screen(cb: CallbackQuery):
     country_id = cb.data.replace("select_co_", "")
     country = next((c for c in COUNTRY_SERVICES if c["id"] == country_id), None)
-    if not country: return await cb.answer("❌ Profile metadata error.")
+    if not country: return await cb.answer("❌ Country configuration error.")
     stock = get_stock_count(country_id)
     confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Confirm Purchase", callback_data=f"conf_buy_{country['id']}")],
@@ -188,10 +192,9 @@ async def execute_internal_purchase(cb: CallbackQuery):
                 
         await cb.message.edit_text(text=f"📱 <b>Your Number is Reserved!</b>\n\n🌍 <b>Country:</b> {country['name']}\n🔢 <b>Number:</b> <code>{phone_number}</code>\n\n👉 Enter this number in Telegram app now. Code will arrive here automatically.", parse_mode="HTML")
     except Exception as purchase_err:
-        logging.error(f"Purchase transactional chain failed: {purchase_err}")
-        await cb.message.edit_text("❌ Connection transaction processing error.")
+        logging.error(f"Purchase failed: {purchase_err}")
+        await cb.message.edit_text("❌ An error occurred.")
 
-# --- 4. SECURE ADMINISTRATIVE TOOLS PANEL ---
 @dp.message(Command("addnumber"))
 async def start_add_number(msg: Message, state: FSMContext):
     if msg.from_user.id != ADMIN_TELEGRAM_ID: return

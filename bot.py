@@ -10,7 +10,7 @@ from telethon import TelegramClient, events, Button
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Load secure configuration states
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAGN9YLH9ykLKDtvewuJydI3efFkW5grAQo")
 API_ID = int(os.getenv("API_ID", "2040")) 
 API_HASH = os.getenv("API_HASH", "b1d54e54de9f6a79cd1e4303142a78b4")
 

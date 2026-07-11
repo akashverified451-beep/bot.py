@@ -232,6 +232,84 @@ async def global_message_handler(event):
         event.handled = True
         return
 
+# --- ADD THIS LOGIC TO ENABLE CALLBACK QUERIES ---
+@bot.on(events.CallbackQuery)
+async def callback_handler(event):
+    data = event.data.decode('utf-8')
+    uid = event.sender_id
+
+    # 1. ALWAYS answer immediately to stop the loading spinner/timeout error
+    if data == "lbl":
+        await event.answer("This is a table column label.", alert=False)
+        return
+    else:
+        # Acknowledge all other clicks instantly so the error goes away
+        await event.answer("Processing request...", alert=False)
+
+    # 2. Process purchase sequence
+    if data.startswith("buy:"):
+        _, country, price_str = data.split(":")
+        price = float(price_str)
+
+        country_prefixes = {
+            "Colombia": "+57%", "Nigeria": "+234%", "Bangladesh": "+880%",
+            "Canada": "+1%", "USA": "+1%", "India": "+91%"
+        }
+        prefix = country_prefixes.get(country, "%")
+
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                # Check user wallet balance
+                await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
+                user_row = await cursor.fetchone()
+                user_balance = user_row[0] if user_row else 0
+
+                if user_balance < price:
+                    await event.respond(f"❌ **Insufficient Funds!**\n\nYour balance: ₹{user_balance}\nRequired amount: ₹{price}\n\nPlease refill your wallet.")
+                    return
+
+                # Fetch available stock item
+                await cursor.execute(
+                    "SELECT phone_number, api_id, api_hash, string_session FROM available_accounts WHERE phone_number LIKE %s LIMIT 1",
+                    (prefix,)
+                )
+                account_row = await cursor.fetchone()
+
+                if not account_row:
+                    await event.respond(f"📭 **Out of Stock!**\n\nWe do not have any available accounts for **{country}** right now.")
+                    return
+
+                phone_number, api_id, api_hash, string_session = account_row
+
+                # Atomically apply balance deduction and clear item from database stock
+                await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (int(price), uid))
+                await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_number,))
+                await cursor.execute(
+                    "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
+                    (phone_number, uid, "COMPLETED")
+                )
+                await conn.commit()
+
+        # Securely deliver credentials package to user
+        delivery_message = (
+            "🎉 **Purchase Successful!**\n\n"
+            f"🌍 **Country:** {country}\n"
+            f"💰 **Debited Amount:** ₹{price}\n"
+            f"📱 **Phone Number:** `{phone_number}`\n\n"
+            "📋 **Your Session Credentials:**\n"
+            f"• **API ID:** `{api_id}`\n"
+            f"• **API HASH:** `{api_hash}`\n\n"
+            "🔑 **String Session Token:**\n"
+            f"<code>{string_session}</code>"
+        )
+        await event.respond(delivery_message, parse_mode='html')
+        
+        # Notify Admin
+        try:
+            await bot.send_message(ADMIN_TELEGRAM_ID, f"💰 **Sale!** User `{uid}` bought **{country}** (`{phone_number}`).")
+        except Exception:
+            pass
+
 # --- Execution Runtime Initialization Loop ---
 async def main():
     await init_db()

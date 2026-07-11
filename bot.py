@@ -240,7 +240,8 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-    # 9. Handle Add Funds Button
+    
+    # Handle Add Funds Button
     elif text == "➕ Add Funds":
         txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
         claim_id = str(random.randint(1000, 9999))
@@ -250,25 +251,149 @@ async def global_message_handler(event):
                 await cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
                 await conn.commit()
         
-        # Build strict UPI standard format string payload
-        upi_payload = f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP_BOT&tr={txn}&tn=Wallet_Refill_{claim_id}"
+        img = qrcode.make(f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR")
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        buf.seek(0)
+        buf.name = "qr.png" 
         
-        # Draw and output the image matrix arrays via internal memory operations
-        qr_img = qrcode.make(upi_payload)
-        image_stream = io.BytesIO()
-        qr_img.save(image_stream, format="PNG")
-        image_stream.seek(0)
+        # ✅ UPDATED: Message formatting updated as requested
+        cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay.\n\n⚠️ After making the payment, simply upload your Payment Screenshot for verification the payment.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
         
-        deposit_instruction = (
-            "💳 <b>Deposit System Initialized</b>\n\n"
-            f"1️⃣ Scan the generated QR code with any UPI app.\n"
-            f"2️⃣ Complete the payment transaction.\n"
-            f"3️⃣ Copy your 12-digit transaction ID (UTR).\n\n"
-            f"⚠️ <b>Claim ID:</b> <code>{claim_id}</code>\n\n"
-            "Send your UTR/Txn ID here in the chat to claim your funds automatically."
+        await event.respond(
+            cap,
+            file=buf,
+            buttons=[[Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]],
+            parse_mode='html'
         )
+    
+    # Handle Screenshot Uploads
+    elif event.photo:
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = %s ORDER BY claim_id DESC LIMIT 1", (uid,))
+                row = await cursor.fetchone()
+            
+        if not row:
+            await event.respond("❌ You don't have any active deposit generation requests open. Please click '➕ Add Funds' first.")
+            return
+            
+        claim_id, txn = row[0], row[1]
+        await event.respond("⏳ <b>Screenshot Received!</b>\nYour proof has been sent to the admin for manual verification.", parse_mode='html')
         
-        # Send dynamic PNG buffer directly over Telegram without local storage leaks
+        akb = [
+            [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
+            [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
+            [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
+            [Button.inline("📩 Confirm & Send", data=f"send:{claim_id}")],
+            [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
+        ]
+        
+        admin_text = f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0"
+        await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
+
+# --- Admin Callback Button Processors ---
+@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"add:")))
+async def admin_add_click(event):
+    if event.sender_id != ADMIN_TELEGRAM_ID:
+        return
+    
+    await event.answer()  # Stops the loading spinner instantly
+    
+    data_str = event.data.decode('utf-8')
+    _, claim_id, add_amt = data_str.split(":")
+    add_amt = int(add_amt)
+    
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = %s", (str(claim_id),))
+            row = await cursor.fetchone()
+            
+            if not row:
+                await event.edit("❌ This claim has expired or was already closed.")
+                return
+                
+            # ✅ FIXED: Correct and safe indexing for tuple fields
+            uid = row[0]
+            txn = row[1]
+            session_amt = row[2]
+            new_session_amt = session_amt + add_amt
+            
+            # Update the temporary claim total and add the balance directly to the user
+            await cursor.execute("UPDATE claims SET session_amt = %s WHERE claim_id = %s", (new_session_amt, str(claim_id)))
+            await cursor.execute("UPDATE users SET balance = balance + %s WHERE uid = %s", (add_amt, uid))
+            await conn.commit()
+    
+    akb = [
+        [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
+        [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
+        [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
+        [Button.inline(f"📩 Confirm & Send ₹{new_session_amt}", data=f"send:{claim_id}")],
+        [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
+    ]
+    
+    updated_text = f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{new_session_amt}"
+    await event.edit(updated_text, buttons=akb, parse_mode='html')
+
+
+# --- 2. FIXED CONFIRM & SEND BUTTON HANDLER ---
+@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"send:")))
+async def admin_send_receipt_click(event):
+    if event.sender_id != ADMIN_TELEGRAM_ID:
+        return
+        
+    await event.answer()  # Stops the loading spinner instantly
+    data_str = event.data.decode('utf-8')
+    _, claim_id = data_str.split(":")
+    
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = %s", (str(claim_id),))
+            row = await cursor.fetchone()
+            
+            if not row:
+                await event.edit("❌ Already closed or claim not found.")
+                return
+                
+            # ✅ FIXED: Using identical correct indexing matching the add handler
+            uid = row[0]
+            txn = row[1]
+            session_amt = row[2]
+            
+            # Remove completed claim tracking log entry
+            await cursor.execute("DELETE FROM claims WHERE claim_id = %s", (str(claim_id),))
+            await conn.commit()
+
+    # Inform the user and complete the admin view update
+    try:
+        await bot.send_message(entity=uid, message=f"✅ <b>Deposit Confirmed!</b>\n\n💰 ₹{session_amt} has been successfully added to your wallet balance.", parse_mode='html')
+        await event.edit(f"✅ Approved and sent ₹{session_amt} to user <code>{uid}</code>", parse_mode='html')
+    except Exception as e:
+        logging.error(f"Failed to send confirmation message to user: {e}")
+        await event.edit(f"✅ Approved in DB, but couldn't message user. Amount: ₹{session_amt}", parse_mode='html')
+
+# --- 3. FIXED CANCEL & DENY BUTTON HANDLER ---
+@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"deny:") or d.startswith(b"cancel:")))
+async def cancel_or_deny_click(event):
+    await event.answer()  # Stops the loading spinner instantly
+    
+    data_str = event.data.decode('utf-8')
+    
+    if ":" in data_str:
+        action, claim_id = data_str.split(":", 1)
+    else:
+        await event.edit("❌ This request data structure is broken.")
+        return
+    
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("DELETE FROM claims WHERE claim_id = %s", (str(claim_id),))
+            await conn.commit()
+            
+    await event.edit("❌ Request has been declined and cancelled successfully.")
+
+    
+# Send dynamic PNG buffer directly over Telegram without local storage leaks
         await bot.send_file(
             event.chat_id, 
             image_stream, 

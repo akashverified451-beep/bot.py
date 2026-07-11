@@ -183,36 +183,38 @@ async def global_message_handler(event):
                 inventory[detected_country] = 0
             inventory[detected_country] += 1
 
-        # Initialize main presentation storefront data row header layout labels
+          # #6. Initialize main presentation storefront table header
         tg_services_kb = [
-            [Button.inline("🌍 Country", data="lbl"), Button.inline("💰 Price", data="lbl"), Button.inline("📦 Stock", data="lbl")]
+            [
+                Button.inline("🌍 Country", data="lbl"),
+                Button.inline("💰 Price", data="lbl"),
+                Button.inline("📦 Stock", data="lbl")
+            ]
         ]
 
-        # 6. Dynamically build rows ONLY for countries that actually have active stock!
+        # #7. Dynamically build rows ONLY for active stock inventory segments
         for country_name, stock_qty in inventory.items():
-            flag = country_flags.get(country_name, "🌍")
-            price_val = custom_prices.get(country_name, DEFAULT_PRICE)
-            btn_callback = f"buy:{country_name}:{price_val}"
+            # Fallback mappings for dynamic rows calculation
+            flag = country_flags.get(country_name, "🌐")
+            price = custom_prices.get(country_name, DEFAULT_PRICE)
+            
+            # The click payload identifier must pass the unified "buy_tg_" handle tag
+            callback_payload = f"buy_tg_{country_name}"
+            
+            # Build an aligned horizontal grid row matrix
+            country_row = [
+                Button.inline(f"{flag} {country_name}", data=callback_payload),
+                Button.inline(f"₹{price:.1f}", data=callback_payload),
+                Button.inline(f"[{stock_qty}] ✅", data=callback_payload)
+            ]
+            tg_services_kb.append(country_row)
 
-            tg_services_kb.append([
-                Button.inline(f"{flag} {country_name}", data=btn_callback),
-                Button.inline(f"₹{price_val}", data=btn_callback),
-                Button.inline(f"[{stock_qty}] ✅", data=btn_callback)
-            ])
-
-        # If store inventory records evaluate empty, render a placeholder notification
-        if len(tg_services_kb) == 1:
-            await event.respond("📭 **The store is currently empty!** Admin has not uploaded stock yet.")
-            event.handled = True
-            return
-
-        await event.respond("📊 <b>Available Telegram Services</b>", buttons=tg_services_kb, parse_mode='html')
+        # Dispatch the visual dynamic storefront component layout line
+        await event.respond("📊 **Available Telegram Services**", buttons=tg_services_kb)
         event.handled = True
         return
-
-
-
-    # 6. Handle Buy Whatsapp OTP Button
+      
+  # 6. Handle Buy Whatsapp OTP Button
     elif text == "🗨️ Buy Whatsapp OTP":
         await event.respond("🔄 <b>Live WhatsApp OTP Activation Enabled</b>\n\nPlease request your verification code now.", parse_mode='html')
         event.handled = True

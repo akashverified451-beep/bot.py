@@ -403,144 +403,106 @@ async def cancel_or_deny_click(event):
     return
 
 
-# --- Updated Callback Handler with Dynamic Check OTP Button ---
+# --- Complete High-Speed Error-Free Callback & Logic Engine ---
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
     data = event.data.decode('utf-8')
     uid = event.sender_id
-
+    
     if data == "lbl":
         await event.answer()
         return
 
-
-        # 1. First Step: User clicks a country button to reserve a number
-    if data.startswith("buy:"):
-        _, country, price_str = data.split(":")
-        price = float(price_str)
-
-        await event.answer("Reserving number...", alert=False)
-
-        # Explicitly map the country names to their database prefix search filters
-        country_prefixes = {
-            "Colombia": "+57%", "Nigeria": "+234%", "Bangladesh": "+880%",
-            "Canada": "+1%", "United States": "+1%", "India": "+91%",
-            "Ethiopia": "+251%", "Egypt": "+20%", "Iran": "+98%", 
-            "Pakistan": "+92%", "Indonesia": "+62%", "Kenya": "+254%", 
-            "Chile": "+56%", "Togo": "+228%", "Angola": "+244%",
-            "Japan": "+81%", "Nepal": "+977%"
-        }
-        prefix = country_prefixes.get(country, "%")
-
+    # 1. First Step: User clicks a country purchase option
+    if data.startswith("buy_tg_"):
+        country = data.replace("buy_tg_", "").strip()
+        DEFAULT_PRICE = 53.39
+        custom_prices = {"Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04, "Canada": 40.04, "United States": 41.00, "India": 41.00, "Ethiopia": 41.00}
+        price = int(custom_prices.get(country, DEFAULT_PRICE))
+        
+        # Open fresh connection line immediately on click to prevent closed connection errors
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
-                # Check user wallet balance cleanly
                 await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
                 user_row = await cursor.fetchone()
                 user_balance = user_row[0] if user_row else 0
-
+                
                 if user_balance < price:
-                    await event.respond(f"❌ **Insufficient Funds!**\n\nYour balance: ₹{user_balance}\nRequired amount: ₹{price}\n\nPlease refill your wallet using the **💼 Wallet** menu.")
+                    await event.respond("❌ **Insufficient Funds!** Please add balance to your wallet.")
                     return
 
-                # Fetch exactly 1 available account tracking this specific phone prefix filter
-                await cursor.execute(
-                    "SELECT phone_number, api_id, api_hash, string_session FROM available_accounts WHERE phone_number LIKE %s LIMIT 1",
-                    (prefix,)
-                )
+                prefix_to_country = {"Colombia": "+57", "Nigeria": "+234", "Bangladesh": "+880", "India": "+91", "Ethiopia": "+251"}
+                target_prefix = prefix_to_country.get(country, None)
+
+                if target_prefix:
+                    await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts WHERE phone_number LIKE %s LIMIT 1", (target_prefix + '%',))
+                else:
+                    await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts LIMIT 1")
+                    
                 account_row = await cursor.fetchone()
-
+                
                 if not account_row:
-                    await event.respond(f"📭 **Out of Stock or Query Mismatch!**\n\nNo accounts found matching prefix `{prefix}` inside your database pile.")
+                    await event.respond("❌ **Out of Stock!** This batch has just sold out.")
                     return
-
+                
                 phone_number, api_id, api_hash, string_session = account_row
+                
+                # Deduct money securely
+                await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (price, uid))
+                # Delete item from available stock so nobody else can buy it
+                await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_number,))
+                
+                # Backup session keys inside status column so Check OTP can log in later
+                session_backup_data = f"{api_id}|{api_hash}|{string_session}"
+                await cursor.execute(
+                    "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
+                    (phone_number, uid, session_backup_data)
+                )
+                await conn.commit()
 
-     # Deduct balance as integer and clear item from stock
-        await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (price, uid))
-        await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_number,))
-        
-        # Save credentials inside status column so Check OTP can read it later
-        session_backup_data = f"{api_id}|{api_hash}|{string_session}"
-        await cursor.execute(
-            "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
-            (phone_number, uid, session_backup_data)
-        )
-        await conn.commit()
-
-
-        # Build clean reservation message layout with flags
-        country_flags = {
-            "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦", 
-            "United States": "🇺🇸", "India": "🇮🇳", "Japan": "🇯🇵", "Nepal": "🇳🇵"
-        }
-        flag = country_flags.get(country, "🌍")
-
+        # Build reservation message layout without the static slow text
         delivery_message = (
-            "✅ **Number reserved successfully**\n\n"
-            f"📞 **Phone:** `{phone_number}`\n"
-            f"🌏 **Country:** {country} {flag}\n"
-            f"💰 **Price:** ₹{price}\n\n"
-            "🌟 **Note:** Number cannot be cancelled because OTP Delivery is guaranteed!"
+            "🇮🇳 India       ₹41.0       ✅\n\n"
+            f"📞 **Phone Number:** `{phone_number}`\n"
+            "📩 **OTP:** `⏳ NO LIVE SMS FOUND YET`\n\n"
+            "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
         )
-
-        # Attach the 📩 Check OTP button with the phone number payload signature
-        otp_btn_kb = [[Button.inline("📩 Check OTP", data=f"checkotp:{phone_number}")]]
-        await event.respond(delivery_message, buttons=otp_btn_kb)
-
-        # ADMIN SALE NOTIFICATION ALERT
-        try:
-            await bot.send_message(
-                ADMIN_TELEGRAM_ID, 
-                f"💰 **Sale Alert!**\nUser `{uid}` reserved a **{country}** number (`{phone_number}`) for ₹{price}."
-            )
-        except Exception:
-            pass
+        retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=f"checkotp:{phone_number}")]]
+        await event.respond(delivery_message, buttons=retry_btn_kb)
         return
 
-    # 2. Second Step: Automatically log in using the session string and read the real OTP
+    # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):
         _, target_phone = data.split(":")
+        target_phone = target_phone.strip()
         
-        # Acknowledge the click immediately to remove loading spinners
-        await event.answer("Connecting to account inbox...", alert=False)
-
+        await event.answer("🔄 Scanning account inbox instantly...", alert=False)
+        
         api_id_val = None
         api_hash_val = None
         session_str_val = None
-
-        # 1. Look inside the active orders or history to find the account's login credentials
-        # Note: We query active_orders table to fetch back our details or track them securely
+        
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
-                # To read the code, we look up the credentials for this phone number
-                # Make sure your database keeps the session details active or tracked
+                # Query active_orders table to fetch backup key details securely
                 await cursor.execute(
-                    "SELECT api_id, api_hash, string_session FROM available_accounts WHERE phone_number = %s", 
-                    (target_phone,)
+                    "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", 
+                    (target_phone, uid)
                 )
                 row = await cursor.fetchone()
-                
-                # If deleted during checkout, let's keep them stored temporarily or fetch from a history record.
-                # For this setup to work flawlessly, ensure you don't completely delete the account data 
-                # until the order expires, or store it in your active_orders structure!
-                if row:
-                    api_id_val, api_hash_val, session_str_val = row
-                else:
-                    # Alternative backup check inside your orders log if configured
-                    api_id_val = API_ID
-                    api_hash_val = API_HASH
-                    session_str_val = None # Needs the user string session token to log in
+                if row and row[0]:
+                    try:
+                        api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
+                    except ValueError:
+                        pass
 
-        # Fallback text if the session data isn't fully linked yet
-        fetched_otp = "NO LIVE SMS FOUND YET"
+        fetched_otp = "⏳ NO LIVE SMS FOUND YET"
 
-     # 2. Connect live to the account session string instantly
         if session_str_val:
             try:
                 from telethon.sessions import StringSession
+                import asyncio
                 
-                # Build an isolated memory client with minimum retries for speed
                 temp_client = TelegramClient(
                     StringSession(session_str_val), 
                     int(api_id_val), 
@@ -549,36 +511,35 @@ async def callback_handler(event):
                     retry_delay=1
                 )
                 
-                # Connect with a strict 4-second timeout limit to guarantee speed
+                # Fast connection timeout constraint
                 await asyncio.wait_for(temp_client.connect(), timeout=4.0)
                 
                 if await temp_client.is_user_authorized():
-                    # Target ONLY the official Telegram notification entity (777000) for speed
+                    # Scan exclusively the official Telegram notifications user profile
                     async for msg in temp_client.iter_messages(777000, limit=1):
                         if msg.text:
-                            # Look for 5 or 6 digit codes instantly using regex
+                            import re
                             otp_match = re.search(r'\b\d{5,6}\b', msg.text)
                             if otp_match:
                                 fetched_otp = otp_match.group(0)
                             else:
-                                fetched_otp = msg.text[:40] # fallback to raw message snippet
+                                fetched_otp = msg.text[:40]
                 else:
-                    fetched_otp = "❌ SESSION EXPIRED / REVOKED"
+                    fetched_otp = "❌ SESSION EXPIRED / TERMINATED"
                     
             except Exception as e:
-                logging.error(f"Instant OTP Fetch Failure: {e}")
+                logging.error(f"Instant Live Check Fault: {e}")
                 fetched_otp = "⏳ NO LIVE SMS FOUND YET"
                 
             finally:
-                # Clean up network sockets immediately
                 if 'temp_client' in locals() and temp_client.is_connected():
                     await temp_client.disconnect()
 
-                # Update the UI layout to display the real, live OTP data
+        # Clean display presentation payload without old text lines
         custom_otp_message = (
             "🇮🇳 India       ₹41.0       ✅\n\n"
             f"📞 **Phone Number:** `{target_phone}`\n"
-            f"📩 **OTP:** `{fetched_otp}`\n\n"
+            f"📩 **OTP:** **`{fetched_otp}`**\n\n"
             "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
         )
         
@@ -594,4 +555,6 @@ async def main():
     await bot.run_until_disconnected()
 
 if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())
+        

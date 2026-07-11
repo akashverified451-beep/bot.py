@@ -3,8 +3,9 @@ import random
 import logging
 import io
 import sqlite3
+import asyncio
 from datetime import datetime
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyrogram.types import (
     Message, 
     ReplyKeyboardMarkup, 

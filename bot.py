@@ -377,10 +377,17 @@ async def cancel_or_deny_click(event):
             
     await event.edit("❌ Request has been declined and cancelled successfully.")
 
+
 # --- Startup and Initialization Loop ---
 async def main():
+    # ✅ FIX: Automatically verify and create the folder so SQLite never throws an error
+    session_dir = "session_data"
+    if not os.path.exists(session_dir):
+        os.makedirs(session_dir)
+        logging.info(f"Created missing directory structural path: {session_dir}")
+
     # 1. Initialize structural DB layout
-    init_db()
+    await init_db()
     
     # 2. Start the Telethon Bot Client using the token
     await bot.start(bot_token=BOT_TOKEN)

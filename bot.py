@@ -289,19 +289,36 @@ async def callback_handler(event):
         return
 
     # 1. First Step: User clicks a country button to reserve a number
-    if data.startswith("buy:"):
+        if data.startswith("buy:"):
         _, country, price_str = data.split(":")
         price = float(price_str)
 
         await event.answer("Reserving number...", alert=False)
 
+        # Updated prefix map matching your automated listing entries exactly
         country_prefixes = {
-            "Colombia": "+57%", "Nigeria": "+234%", "Bangladesh": "+880%",
-            "Canada": "+1%", "USA": "+1%", "India": "+91%"
+            "Colombia": "+57%", 
+            "Nigeria": "+234%", 
+            "Bangladesh": "+880%",
+            "Canada": "+1%", 
+            "United States": "+1%",   # Fixed name mapping from USA to United States
+            "India": "+91%",
+            "Ethiopia": "+251%", 
+            "Egypt": "+20%", 
+            "Iran": "+98%", 
+            "Pakistan": "+92%", 
+            "Indonesia": "+62%", 
+            "Kenya": "+254%", 
+            "Chile": "+56%", 
+            "Togo": "+228%", 
+            "Angola": "+244%",
+            "Japan": "+81%", 
+            "Nepal": "+977%"
         }
         prefix = country_prefixes.get(country, "%")
 
-        async with await get_db_connection() as conn:
+
+     async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 # Check user wallet balance
                 await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))

@@ -32,7 +32,7 @@ ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
 
-# Initialize Pyrogram Bot Client Instance (Removed invalid inline_workers argument)
+# Initialize Pyrogram Bot Client Instance
 app = Client(
     "sky_otp_bot",
     bot_token=BOT_TOKEN

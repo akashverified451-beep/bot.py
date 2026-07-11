@@ -169,7 +169,7 @@ async def admin_add_click(event):
     if event.sender_id != ADMIN_TELEGRAM_ID:
         return
     
-    await event.answer()  # ✅ Stop the Telegram loading spinner instantly
+    await event.answer()  # Stops the loading spinner instantly
     
     data_str = event.data.decode('utf-8')
     _, claim_id, add_amt = data_str.split(":")
@@ -184,7 +184,7 @@ async def admin_add_click(event):
                 await event.edit("❌ This claim has expired or was already closed.")
                 return
                 
-            # ✅ FIXED: Correctly index the database row array items
+            # ✅ FIXED: Correct and safe indexing for tuple fields
             uid = row[0]
             txn = row[1]
             session_amt = row[2]
@@ -206,10 +206,42 @@ async def admin_add_click(event):
     updated_text = f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{new_session_amt}"
     await event.edit(updated_text, buttons=akb, parse_mode='html')
 
+
+# --- 2. FIXED CONFIRM & SEND BUTTON HANDLER ---
 @bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"send:")))
 async def admin_send_receipt_click(event):
     if event.sender_id != ADMIN_TELEGRAM_ID:
-        return await event.answer()
+        return
+        
+    await event.answer()  # Stops the loading spinner instantly
+    data_str = event.data.decode('utf-8')
+    _, claim_id = data_str.split(":")
+    
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = %s", (str(claim_id),))
+            row = await cursor.fetchone()
+            
+            if not row:
+                await event.edit("❌ Already closed or claim not found.")
+                return
+                
+            # ✅ FIXED: Using identical correct indexing matching the add handler
+            uid = row[0]
+            txn = row[1]
+            session_amt = row[2]
+            
+            # Remove completed claim tracking log entry
+            await cursor.execute("DELETE FROM claims WHERE claim_id = %s", (str(claim_id),))
+            await conn.commit()
+
+    # Inform the user and complete the admin view update
+    try:
+        await bot.send_message(entity=uid, message=f"✅ <b>Deposit Confirmed!</b>\n\n💰 ₹{session_amt} has been successfully added to your wallet balance.", parse_mode='html')
+        await event.edit(f"✅ Approved and sent ₹{session_amt} to user <code>{uid}</code>", parse_mode='html')
+    except Exception as e:
+        logging.error(f"Failed to send confirmation message to user: {e}")
+        await event.edit(f"✅ Approved in DB, but couldn't message user. Amount: ₹{session_amt}", parse_mode='html')
 
 # --- Startup and Initialization Loop ---
 async def main():

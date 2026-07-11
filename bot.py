@@ -402,7 +402,6 @@ async def cancel_or_deny_click(event):
     event.handled = True
     return
 
-
 # --- Complete High-Speed Error-Free Callback & Logic Engine ---
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
@@ -425,6 +424,8 @@ async def callback_handler(event):
             async with conn.cursor() as cursor:
                 await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
                 user_row = await cursor.fetchone()
+                
+                # FIX: Safely extract the raw number value from the SQL tuple
                 user_balance = user_row[0] if user_row else 0
                 
                 if user_balance < price:
@@ -468,6 +469,8 @@ async def callback_handler(event):
             "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
         )
         retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=f"checkotp:{phone_number}")]]
+        
+        # Using event.respond to print the active login payload to client dashboard
         await event.respond(delivery_message, buttons=retry_btn_kb)
         return
 
@@ -557,4 +560,3 @@ async def main():
 if __name__ == "__main__":
     import asyncio
     asyncio.run(main())
-        

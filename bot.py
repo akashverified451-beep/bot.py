@@ -305,28 +305,76 @@ async def callback_handler(event):
         await event.respond(delivery_message, buttons=otp_btn_kb)
         return
 
-    # 2. Second Step: User clicks the "📩 Check OTP" inline button
+        # 2. Second Step: Automatically log in using the session string and read the real OTP
     elif data.startswith("checkotp:"):
         _, target_phone = data.split(":")
         
-        # Acknowledge click immediately to prevent the loading spinner timeout error
-        await event.answer("Checking system gateway for codes...", alert=False)
+        # Acknowledge the click immediately to remove loading spinners
+        await event.answer("Connecting to account inbox...", alert=False)
 
-        # Placeholder logic: Shows waiting status until SMS API connects
-        fetched_otp = "WAITING FOR SMS" 
+        api_id_val = None
+        api_hash_val = None
+        session_str_val = None
 
+        # 1. Look inside the active orders or history to find the account's login credentials
+        # Note: We query active_orders table to fetch back our details or track them securely
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                # To read the code, we look up the credentials for this phone number
+                # Make sure your database keeps the session details active or tracked
+                await cursor.execute(
+                    "SELECT api_id, api_hash, string_session FROM available_accounts WHERE phone_number = %s", 
+                    (target_phone,)
+                )
+                row = await cursor.fetchone()
+                
+                # If deleted during checkout, let's keep them stored temporarily or fetch from a history record.
+                # For this setup to work flawlessly, ensure you don't completely delete the account data 
+                # until the order expires, or store it in your active_orders structure!
+                if row:
+                    api_id_val, api_hash_val, session_str_val = row
+                else:
+                    # Alternative backup check inside your orders log if configured
+                    api_id_val = API_ID
+                    api_hash_val = API_HASH
+                    session_str_val = None # Needs the user string session token to log in
+
+        # Fallback text if the session data isn't fully linked yet
+        fetched_otp = "NO LIVE SMS FOUND YET"
+
+        # 2. Connect live to the customer's reserved number using Telethon
+        if session_str_val:
+            try:
+                from telethon.sessions import StringSession
+                # Start a temporary client session inside your bot backend to check the inbox
+                temp_client = TelegramClient(StringSession(session_str_val), int(api_id_val), api_hash_val)
+                await temp_client.connect()
+                
+                if await temp_client.is_user_authorized():
+                    # Read the last 5 messages from Telegram official notification service
+                    async for msg in temp_client.iter_messages(777000, limit=5):
+                        if msg.text:
+                            # Use regular expressions to extract a 5-digit or 6-digit login pin code
+                            match = re.search(r'\b\d{5,6}\b', msg.text)
+                            if match:
+                                fetched_otp = match.group(0)
+                                break
+                await temp_client.disconnect()
+            except Exception as e:
+                logging.error(f"Failed to read session inbox: {e}")
+                fetched_otp = "SESSION EXPIRED / ERROR"
+
+        # Update the UI layout to display the real, live code found
         custom_otp_message = (
             f"📞 **Phone Number:** `{target_phone}`\n\n"
             f"📩 **OTP:** `{fetched_otp}`\n\n"
             "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
         )
 
-        # Refresh the inline button so they can click it again to retry fetching the code
-        retry_btn_kb = [[Button.inline("📩 Check OTP", data=f"checkotp:{target_phone}")]]
-        
-        # Edit the existing message in-place instead of creating spam messages
+        retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=f"checkotp:{target_phone}")]]
         await event.edit(custom_otp_message, buttons=retry_btn_kb)
         return
+
 
 # --- Execution Runtime Initialization Loop ---
 async def main():

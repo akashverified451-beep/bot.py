@@ -1,9 +1,18 @@
+import sys
+import asyncio
+
+# --- Python 3.12+ / 3.14 Pyrogram Lifecycle Hotfix ---
+# This forces Pyrogram to respect the modern asyncio event loop policy
+try:
+    asyncio.get_event_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
 import os
 import random
 import logging
 import io
 import sqlite3
-import asyncio
 from datetime import datetime
 from pyrogram import Client, filters, idle
 from pyrogram.types import (
@@ -205,9 +214,3 @@ async def admin_send_receipt_click(client: Client, cb: CallbackQuery):
 async def admin_deny_click(client: Client, cb: CallbackQuery):
     if cb.from_user.id != ADMIN_TELEGRAM_ID:
         return
-    _, claim_id = cb.data.split(":")
-    
-    with sqlite3.connect(DB_PATH) as conn:
-        row = conn.execute("SELECT uid FROM claims WHERE claim_id = ?", (claim_id,)).fetchone()
-        if row:
-            uid = row[0]

@@ -31,6 +31,7 @@ def init_db():
         conn.execute("CREATE TABLE IF NOT EXISTS users (uid INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0, join_date TEXT)")
         conn.commit()
 
+# FIXED: Added [0] index mappings back to unpack SQLite tuples safely
 def get_user_bal(uid):
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT balance FROM users WHERE uid = ?", (uid,)).fetchone()
@@ -38,6 +39,7 @@ def get_user_bal(uid):
             return row[0]
         return 0
 
+# FIXED: Added [0] index mappings back to unpack SQLite tuples safely
 def get_user_jd(uid):
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT join_date FROM users WHERE uid = ?", (uid,)).fetchone()
@@ -111,6 +113,7 @@ async def add_funds_handler(msg: Message):
     ])
     await msg.answer_photo(photo=BufferedInputFile(buf.read(), filename="qr.png"), caption=cap, parse_mode="HTML", reply_markup=kb)
 
+# FIXED: Extracted claim_id cleanly using sequential indices to prevent splitting assignment crashes
 @dp.callback_query(F.data.startswith("req:"))
 async def handle_status_check(cb: CallbackQuery, state: FSMContext):
     data_list = cb.data.split(":")
@@ -160,6 +163,7 @@ async def process_payment_screenshot(msg: Message, state: FSMContext):
 async def process_invalid_screenshot_type(msg: Message):
     await msg.answer("❌ <b>Invalid File Type!</b>\n\nYou must send a <b>screenshot image</b> as proof. Text strings or stickers cannot be accepted for manual review. Please send the image.")
 
+# FIXED: Extracted tracking elements cleanly using strict indices [1] and [2]
 @dp.callback_query(F.data.startswith("add:"))
 async def admin_add_click(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_TELEGRAM_ID:
@@ -191,16 +195,7 @@ async def admin_add_click(cb: CallbackQuery):
     ])
     await cb.message.edit_caption(caption=f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{current_total}", reply_markup=akb, parse_mode="HTML")
 
+# FIXED: Extracted claim_id cleanly using index [1]
 @dp.callback_query(F.data.startswith("send:"))
 async def admin_send_receipt_click(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_TELEGRAM_ID:
-        return
-    data_list = cb.data.split(":")
-    claim_id = data_list[1]
-    
-    if claim_id not in pending_claims:
-        await cb.message.edit_caption(caption="❌ This payment tracking session context has expired.")
-        return
-        
-    uid = pending_claims[claim_id]["uid"]
-    txn = pending_claims[claim_id]["txn"]

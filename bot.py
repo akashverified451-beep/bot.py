@@ -1,9 +1,11 @@
+
 import os
 import random
 import logging
 import io
 import sqlite3
 import asyncio
+import time
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
@@ -11,13 +13,13 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 
+# Core Dashboard logging config
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+# Variables configuration strings 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
-
-# 🔄 UPDATED DATABASE CONFIGURATION FOR RENDER PERSISTENT DISKS
 DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
 
 pending_claims = {}
@@ -26,7 +28,6 @@ class DepositStates(StatesGroup):
     waiting_for_screenshot = State()
 
 def init_db():
-    # Automatically creates the database folder if it doesn't exist yet on the disk
     db_dir = os.path.dirname(DB_PATH)
     if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir, exist_ok=True)
@@ -111,9 +112,10 @@ async def add_funds_handler(msg: Message):
     ])
     await msg.answer_photo(photo=BufferedInputFile(buf.read(), filename="qr.png"), caption=cap, parse_mode="HTML", reply_markup=kb)
 
+# FIXED: Correct unpacking format applied to colon delimiter splits
 @dp.callback_query(F.data.startswith("req:"))
 async def handle_status_check(cb: CallbackQuery, state: FSMContext):
-    claim_id = cb.data.split(":")[1]
+    _, claim_id = cb.data.split(":")
     if claim_id not in pending_claims:
         await cb.answer("❌ This payment session expired or has already been reviewed.")
         return
@@ -197,7 +199,6 @@ async def admin_add_click(cb: CallbackQuery):
 @dp.callback_query(F.data.startswith("send:"))
 async def admin_send_receipt_click(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_TELEGRAM_ID: return
-    claim_id = cb.data.split(":")[1]
+    _, claim_id = cb.data.split(":")
     
     if claim_id not in pending_claims:
-        await cb.message.edit_caption(caption="❌ This payment tracking session context has expired.")

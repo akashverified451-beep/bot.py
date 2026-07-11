@@ -11,10 +11,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 # Load secure configuration states
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
-
-# 🔴 REPLACE THE VALUES BELOW WITH YOUR ACTUAL TELEGRAM API CREDENTIALS:
-API_ID = int(os.getenv("API_ID", "35742827")) 
-API_HASH = os.getenv("API_HASH", "f2955d75aa8ace7c421a2bb6152c5dd3")
+API_ID = int(os.getenv("API_ID", "2040")) 
+API_HASH = os.getenv("API_HASH", "b1d54e54de9f6a79cd1e4303142a78b4")
 
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
@@ -61,27 +59,30 @@ def balance_kb():
         [Button.text("🔙 Back to Main Menu", resize=True)]
     ]
 
-# --- Command & Interaction Handlers ---
-@bot.on(events.NewMessage(pattern="/start"))
-async def cmd_start(event):
+# --- Force Command & Interaction Handlers ---
+@bot.on(events.NewMessage)
+async def global_message_handler(event):
+    # Ignore channel or group posts to prevent database overhead
     if not event.is_private:
         return
+        
     uid = event.sender_id
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    check_user = cursor.execute("SELECT uid FROM users WHERE uid = ?", (uid,)).fetchone()
-    if not check_user:
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (?, 0, ?)", (uid, now))
-        conn.commit()
-    conn.close()
-    await event.respond("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", buttons=main_kb())
+    text = event.text or ""
+    
+    # 🌟 FORCE START COMMAND ROUTING 🌟
+    if text.startswith("/start"):
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        check_user = cursor.execute("SELECT uid FROM users WHERE uid = ?", (uid,)).fetchone()
+        if not check_user:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (?, 0, ?)", (uid, now))
+            conn.commit()
+        conn.close()
+        await event.respond("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", buttons=main_kb())
+        return
 
-@bot.on(events.NewMessage(func=lambda e: e.is_private and e.text))
-async def text_menu_routing(event):
-    uid = event.sender_id
-    text = event.text
-
+    # --- Text Menu Button Router ---
     if text == "💼 Wallet":
         bal = get_user_bal(uid)
         await event.respond(f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", buttons=balance_kb(), parse_mode='html')
@@ -122,36 +123,33 @@ async def text_menu_routing(event):
             buttons=[[Button.inline("❌ Cancel", data="cancel")]],
             parse_mode='html'
         )
-
-# Catch client payment receipt uploads statelessly
-@bot.on(events.NewMessage(func=lambda e: e.is_private and e.photo))
-async def process_stateless_screenshot(event):
-    uid = event.sender_id
-    
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    row = cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = ? ORDER BY claim_id DESC LIMIT 1", (uid,)).fetchone()
-    conn.close()
         
-    if not row:
-        await event.respond("❌ You don't have any active deposit generation requests open. Please click '➕ Add Funds' first.")
-        return
+    # Catch client payment receipt photo uploads inside the unified handler context
+    elif event.photo:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        row = cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = ? ORDER BY claim_id DESC LIMIT 1", (uid,)).fetchone()
+        conn.close()
+            
+        if not row:
+            await event.respond("❌ You don't have any active deposit generation requests open. Please click '➕ Add Funds' first.")
+            return
+            
+        claim_id = row[0]
+        txn = row[1]
         
-    claim_id = row[0]
-    txn = row[1]
-    
-    await event.respond("⏳ <b>Screenshot Received!</b>\nYour proof has been sent to the admin for manual verification.", parse_mode='html')
-    
-    akb = [
-        [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
-        [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
-        [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
-        [Button.inline("📩 Confirm & Send", data=f"send:{claim_id}")],
-        [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
-    ]
-    
-    admin_text = f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0"
-    await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
+        await event.respond("⏳ <b>Screenshot Received!</b>\nYour proof has been sent to the admin for manual verification.", parse_mode='html')
+        
+        akb = [
+            [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
+            [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
+            [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
+            [Button.inline("📩 Confirm & Send", data=f"send:{claim_id}")],
+            [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
+        ]
+        
+        admin_text = f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0"
+        await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
 
 # --- Admin Interactivity Callback Query Processors ---
 @bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"add:")))
@@ -237,4 +235,3 @@ async def admin_deny_click(event):
     data_str = event.data.decode('utf-8')
     _, claim_id = data_str.split(":")
     
-    conn = sqlite3.connect(DB_PATH)

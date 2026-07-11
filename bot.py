@@ -5,6 +5,7 @@ import io
 import sqlite3
 import asyncio
 from datetime import datetime
+from aiohttp import web
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
 from aiogram.filters import CommandStart
@@ -22,7 +23,6 @@ def init_db():
         os.makedirs(db_dir, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS users (uid INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0, join_date TEXT)")
-        # Create a table to track claims permanently on disk so restarts don't lose data
         conn.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid INTEGER, txn TEXT, session_amt INTEGER DEFAULT 0)")
         conn.commit()
 
@@ -89,7 +89,6 @@ async def add_funds_handler(msg: Message):
     txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
     claim_id = str(random.randint(1000, 9999))
     
-    # Save claim data straight into SQLite database so it survives Render server restarts
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (?, ?, ?)", (claim_id, uid, txn))
         conn.commit()
@@ -105,11 +104,9 @@ async def add_funds_handler(msg: Message):
     ])
     await msg.answer_photo(photo=BufferedInputFile(buf.read(), filename="qr.png"), caption=cap, parse_mode="HTML", reply_markup=kb)
 
-# Catch any photo sent by a user and dynamically check if they have a pending transaction
 @dp.message(F.photo)
 async def process_stateless_screenshot(msg: Message):
     uid = msg.from_user.id
-    
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT claim_id, txn FROM claims WHERE uid = ? ORDER BY claim_id DESC LIMIT 1", (uid,)).fetchone()
         
@@ -148,7 +145,6 @@ async def admin_add_click(cb: CallbackQuery):
         uid, txn, session_amt = row[0], row[1], row[2]
         new_session_amt = session_amt + add_amt
         
-        # Save structural adjustments inside the permanent SQLite file
         conn.execute("UPDATE claims SET session_amt = ? WHERE claim_id = ?", (new_session_amt, claim_id))
         conn.execute("UPDATE users SET balance = balance + ? WHERE uid = ?", (add_amt, uid))
         conn.commit()
@@ -194,3 +190,9 @@ async def admin_deny_click(cb: CallbackQuery):
         return
     _, claim_id = cb.data.split(":")
     
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT uid FROM claims WHERE claim_id = ?", (claim_id,)).fetchone()
+        if row:
+            uid = row[0]
+            conn.execute("DELETE FROM claims WHERE claim_id = ?", (claim_id,))
+            conn.commit()

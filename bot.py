@@ -79,6 +79,27 @@ async def global_message_handler(event):
     uid = event.sender_id
     text = event.text or ""
     
+    # Admin Stock Adder Command
+    if text.startswith("/addstock") and uid == ADMIN_TELEGRAM_ID:
+        try:
+            # Expected format: /addstock phone,api_id,api_hash,string_session
+            command_args = text.split(" ", 1)[1]
+            phone, api_id_val, api_hash_val, session_str = command_args.split(",")
+            
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute(
+                        "INSERT INTO available_accounts (phone_number, api_id, api_hash, string_session) VALUES (%s, %s, %s, %s)",
+                        (phone.strip(), api_id_val.strip(), api_hash_val.strip(), session_str.strip())
+                    )
+                    await conn.commit()
+            
+            await event.respond(f"✅ Successfully added account `{phone.strip()}` to stock pile!")
+        except Exception as e:
+            await event.respond(f"❌ **Format Error!** Use:\n`/addstock phone,api_id,api_hash,session_string`\n\nError: {e}")
+        event.handled = True
+        return
+
     # 1. Handle /start Command
     if text.startswith("/start"):
         async with await get_db_connection() as conn:
@@ -113,16 +134,33 @@ async def global_message_handler(event):
         event.handled = True
         return
         
-    # 5. Handle Buy Telegram Account Button
+    # 5. Handle Buy Telegram Account Button (Pulls Real Database Numbers)
     elif text == "🛍️ Buy Telegram Account":
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT COUNT(*) FROM available_accounts WHERE phone_number LIKE '+57%'")
+                stock_colombia = (await cursor.fetchone())[0]
+
+                await cursor.execute("SELECT COUNT(*) FROM available_accounts WHERE phone_number LIKE '+234%'")
+                stock_nigeria = (await cursor.fetchone())[0]
+
+                await cursor.execute("SELECT COUNT(*) FROM available_accounts WHERE phone_number LIKE '+880%'")
+                stock_bangladesh = (await cursor.fetchone())[0]
+
+                await cursor.execute("SELECT COUNT(*) FROM available_accounts WHERE phone_number LIKE '+1%'")
+                stock_usa_canada = (await cursor.fetchone())[0]
+
+                await cursor.execute("SELECT COUNT(*) FROM available_accounts WHERE phone_number LIKE '+91%'")
+                stock_india = (await cursor.fetchone())[0]
+
         tg_services_kb = [
             [Button.inline("🌍 Country", data="lbl"), Button.inline("💰 Price", data="lbl"), Button.inline("📦 Stock", data="lbl")],
-            [Button.inline("🇨🇴 Colombia", data="buy:Colombia:36.23"), Button.inline("₹36.23", data="buy:Colombia:36.23"), Button.inline(" ✅", data="buy:Colombia:36.23")],
-            [Button.inline("🇳🇬 Nigeria", data="buy:Nigeria:36.23"), Button.inline("₹36.23", data="buy:Nigeria:36.23"), Button.inline(" ✅", data="buy:Nigeria:36.23")],
-            [Button.inline("🇧🇩 Bangladesh", data="buy:Bangladesh:40.04"), Button.inline("₹40.04", data="buy:Bangladesh:40.04"), Button.inline(" ✅", data="buy:Bangladesh:40.04")],
-            [Button.inline("🇨🇦 Canada", data="buy:Canada:40.04"), Button.inline("₹40.04", data="buy:Canada:40.04"), Button.inline(" ✅", data="buy:Canada:40.04")],
-            [Button.inline("🇺🇸 United States", data="buy:USA:41.00"), Button.inline("₹41.00", data="buy:USA:41.00"), Button.inline(" ✅", data="buy:USA:41.00")],
-            [Button.inline("🇮🇳 India", data="buy:India:41.00"), Button.inline("₹41.00", data="buy:India:41.00"), Button.inline(" ✅", data="buy:India:41.00")]
+            [Button.inline("🇨🇴 Colombia", data="buy:Colombia:36.23"), Button.inline("₹36.23", data="buy:Colombia:36.23"), Button.inline(f"📝 {stock_colombia}", data="buy:Colombia:36.23")],
+            [Button.inline("🇳🇬 Nigeria", data="buy:Nigeria:36.23"), Button.inline("₹36.23", data="buy:Nigeria:36.23"), Button.inline(f"📝 {stock_nigeria}", data="buy:Nigeria:36.23")],
+            [Button.inline("🇧🇩 Bangladesh", data="buy:Bangladesh:40.04"), Button.inline("₹40.04", data="buy:Bangladesh:40.04"), Button.inline(f"📝 {stock_bangladesh}", data="buy:Bangladesh:40.04")],
+            [Button.inline("🇨🇦 Canada", data="buy:Canada:40.04"), Button.inline("₹40.04", data="buy:Canada:40.04"), Button.inline(f"📝 {stock_usa_canada}", data="buy:Canada:40.04")],
+            [Button.inline("🇺🇸 United States", data="buy:USA:41.00"), Button.inline("₹41.00", data="buy:USA:41.00"), Button.inline(f"📝 {stock_usa_canada}", data="buy:USA:41.00")],
+            [Button.inline("🇮🇳 India", data="buy:India:41.00"), Button.inline("₹41.00", data="buy:India:41.00"), Button.inline(f"📝 {stock_india}", data="buy:India:41.00")]
         ]
         await event.respond("📊 <b>Available Telegram Services</b>", buttons=tg_services_kb, parse_mode='html')
         event.handled = True

@@ -288,13 +288,15 @@ async def callback_handler(event):
         await event.answer()
         return
 
-            # 1. First Step: User clicks a country button to reserve a number
+
+        # 1. First Step: User clicks a country button to reserve a number
     if data.startswith("buy:"):
         _, country, price_str = data.split(":")
         price = float(price_str)
 
         await event.answer("Reserving number...", alert=False)
 
+        # Explicitly map the country names to their database prefix search filters
         country_prefixes = {
             "Colombia": "+57%", "Nigeria": "+234%", "Bangladesh": "+880%",
             "Canada": "+1%", "United States": "+1%", "India": "+91%",
@@ -307,16 +309,16 @@ async def callback_handler(event):
 
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
-                # Check user wallet balance
+                # Check user wallet balance cleanly
                 await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
                 user_row = await cursor.fetchone()
-                user_balance = user_row if user_row else 0
+                user_balance = user_row[0] if user_row else 0
 
                 if user_balance < price:
-                    await event.respond(f"❌ **Insufficient Funds!**\n\nYour balance: ₹{user_balance}\nRequired amount: ₹{price}\n\nPlease refill your wallet.")
+                    await event.respond(f"❌ **Insufficient Funds!**\n\nYour balance: ₹{user_balance}\nRequired amount: ₹{price}\n\nPlease refill your wallet using the **💼 Wallet** menu.")
                     return
 
-                # Fetch available stock item
+                # Fetch exactly 1 available account tracking this specific phone prefix filter
                 await cursor.execute(
                     "SELECT phone_number, api_id, api_hash, string_session FROM available_accounts WHERE phone_number LIKE %s LIMIT 1",
                     (prefix,)
@@ -324,12 +326,12 @@ async def callback_handler(event):
                 account_row = await cursor.fetchone()
 
                 if not account_row:
-                    await event.respond(f"📭 **Out of Stock!**\n\nWe do not have any available accounts for **{country}** right now.")
+                    await event.respond(f"📭 **Out of Stock or Query Mismatch!**\n\nNo accounts found matching prefix `{prefix}` inside your database pile.")
                     return
 
                 phone_number, api_id, api_hash, string_session = account_row
 
-                # Deduct balance and clear item from stock
+                # Deduct balance as integer and clear item from stock list tables
                 await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (int(price), uid))
                 await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_number,))
                 await cursor.execute(
@@ -339,7 +341,10 @@ async def callback_handler(event):
                 await conn.commit()
 
         # Build clean reservation message layout with flags
-        country_flags = {"Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦", "United States": "🇺🇸", "India": "🇮🇳"}
+        country_flags = {
+            "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦", 
+            "United States": "🇺🇸", "India": "🇮🇳", "Japan": "🇯🇵", "Nepal": "🇳🇵"
+        }
         flag = country_flags.get(country, "🌍")
 
         delivery_message = (
@@ -350,7 +355,7 @@ async def callback_handler(event):
             "🌟 **Note:** Number cannot be cancelled because OTP Delivery is guaranteed!"
         )
 
-        # Attach the 📩 Check OTP button with the phone number payload
+        # Attach the 📩 Check OTP button with the phone number payload signature
         otp_btn_kb = [[Button.inline("📩 Check OTP", data=f"checkotp:{phone_number}")]]
         await event.respond(delivery_message, buttons=otp_btn_kb)
 

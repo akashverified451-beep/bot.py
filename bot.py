@@ -8,8 +8,6 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
 from aiogram.filters import CommandStart
-from aiogram.fsm.state import StatesGroup, State
-from aiogram.fsm.context import FSMContext
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -18,32 +16,25 @@ ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
 
-pending_claims = {}
-
-class DepositStates(StatesGroup):
-    waiting_for_screenshot = State()
-
 def init_db():
     db_dir = os.path.dirname(DB_PATH)
     if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS users (uid INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0, join_date TEXT)")
+        # Create a table to track claims permanently on disk so restarts don't lose data
+        conn.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid INTEGER, txn TEXT, session_amt INTEGER DEFAULT 0)")
         conn.commit()
 
 def get_user_bal(uid):
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT balance FROM users WHERE uid = ?", (uid,)).fetchone()
-        if row:
-            return row[0]
-        return 0
+        return row[0] if row else 0
 
 def get_user_jd(uid):
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT join_date FROM users WHERE uid = ?", (uid,)).fetchone()
-        if row:
-            return row[0]
-        return "N/A"
+        return row[0] if row else "N/A"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -97,110 +88,109 @@ async def add_funds_handler(msg: Message):
     uid = msg.from_user.id
     txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
     claim_id = str(random.randint(1000, 9999))
-    pending_claims[claim_id] = {"uid": uid, "txn": txn, "session_amt": 0}
+    
+    # Save claim data straight into SQLite database so it survives Render server restarts
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (?, ?, ?)", (claim_id, uid, txn))
+        conn.commit()
     
     img = qrcode.make(f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR")
     buf = io.BytesIO()
     img.save(buf, format='PNG')
     buf.seek(0)
     
-    cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay <b>any amount</b> you wish to add to your wallet.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
+    cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay.\n\n⚠️ <b>CRITICAL STEP:</b> After making the payment, simply upload your <b>Payment Screenshot</b> straight into this chat window to notify the admin.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Check Payment Status", callback_data=f"req:{claim_id}")],
         [InlineKeyboardButton(text="❌ Cancel", callback_data="cancel")]
     ])
     await msg.answer_photo(photo=BufferedInputFile(buf.read(), filename="qr.png"), caption=cap, parse_mode="HTML", reply_markup=kb)
 
-@dp.callback_query(F.data.startswith("req:"))
-async def handle_status_check(cb: CallbackQuery, state: FSMContext):
-    data_list = cb.data.split(":")
-    claim_id = data_list[1]
+# Catch any photo sent by a user and dynamically check if they have a pending transaction
+@dp.message(F.photo)
+async def process_stateless_screenshot(msg: Message):
+    uid = msg.from_user.id
     
-    if claim_id not in pending_claims:
-        await cb.answer("❌ This payment session expired or has already been reviewed.")
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT claim_id, txn FROM claims WHERE uid = ? ORDER BY claim_id DESC LIMIT 1", (uid,)).fetchone()
+        
+    if not row:
+        await msg.answer("❌ You don't have any active deposit generation requests open. Please click '➕ Add Funds' first.")
         return
         
-    await state.update_data(current_claim_id=claim_id)
-    await cb.message.edit_caption(
-        caption="⚠️ <b>Payment Verification Required</b>\n\nPlease upload and send a clear <b>screenshot image</b> of your transaction payment receipt now.\n\n<i>*Note: Your deposit request will not reach the administrator without your screenshot image submission.</i>", 
-        parse_mode="HTML"
-    )
-    await state.set_state(DepositStates.waiting_for_screenshot)
-    await cb.answer()
-
-@dp.message(DepositStates.waiting_for_screenshot, F.photo)
-async def process_payment_screenshot(msg: Message, state: FSMContext):
-    state_data = await state.get_data()
-    claim_id = state_data.get("current_claim_id")
-    
-    if not claim_id or claim_id not in pending_claims:
-        await msg.answer("❌ Your payment tracking context expired. Please tap '➕ Add Funds' to create a new request.")
-        await state.clear()
-        return
-
-    uid = pending_claims[claim_id]["uid"]
-    txn = pending_claims[claim_id]["txn"]
+    claim_id, txn = row[0], row[1]
     photo_file_id = msg.photo[-1].file_id
     
-    await msg.answer("⏳ <b>Screenshot Uploaded!</b>\nYour verification request along with your screenshot has been dispatched to the admin. Please await confirmation.", parse_mode="HTML")
-    await state.clear()
+    await msg.answer("⏳ <b>Screenshot Received!</b>\nYour proof has been sent to the admin for manual verification.")
     
     akb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ ₹1", callback_data=f"add:{claim_id}:1"), InlineKeyboardButton(text="➕ ₹5", callback_data=f"add:{claim_id}:5")],
         [InlineKeyboardButton(text="➕ ₹10", callback_data=f"add:{claim_id}:10"), InlineKeyboardButton(text="➕ ₹50", callback_data=f"add:{claim_id}:50")],
         [InlineKeyboardButton(text="➕ ₹100", callback_data=f"add:{claim_id}:100"), InlineKeyboardButton(text="➕ ₹500", callback_data=f"add:{claim_id}:500")],
-        [InlineKeyboardButton(text="📩 Confirm & Send Receipt", callback_data=f"send:{claim_id}")],
+        [InlineKeyboardButton(text="📩 Confirm & Send", callback_data=f"send:{claim_id}")],
         [InlineKeyboardButton(text="❌ Decline Request", callback_data=f"deny:{claim_id}")]
     ])
     
     admin_text = f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0"
     await bot.send_photo(chat_id=ADMIN_TELEGRAM_ID, photo=photo_file_id, caption=admin_text, reply_markup=akb, parse_mode="HTML")
 
-@dp.message(DepositStates.waiting_for_screenshot)
-async def process_invalid_screenshot_type(msg: Message):
-    await msg.answer("❌ <b>Invalid File Type!</b>\n\nYou must send a <b>screenshot image</b> as proof. Text strings or stickers cannot be accepted for manual review. Please send the image.")
-
 @dp.callback_query(F.data.startswith("add:"))
 async def admin_add_click(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_TELEGRAM_ID:
         return
-    data_list = cb.data.split(":")
-    claim_id = data_list[1]
-    add_amt = int(data_list[2])
-    
-    if claim_id not in pending_claims:
-        await cb.message.edit_caption(caption="❌ This transaction claim tracking context has expired.")
-        return
-        
-    uid = pending_claims[claim_id]["uid"]
-    txn = pending_claims[claim_id]["txn"]
-    pending_claims[claim_id]["session_amt"] += add_amt
-    current_total = pending_claims[claim_id]["session_amt"]
+    _, claim_id, add_amt = cb.data.split(":")
+    add_amt = int(add_amt)
     
     with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = ?", (claim_id,)).fetchone()
+        if not row:
+            await cb.message.edit_caption(caption="❌ This claim has expired or was already closed.")
+            return
+        uid, txn, session_amt = row[0], row[1], row[2]
+        new_session_amt = session_amt + add_amt
+        
+        # Save structural adjustments inside the permanent SQLite file
+        conn.execute("UPDATE claims SET session_amt = ? WHERE claim_id = ?", (new_session_amt, claim_id))
         conn.execute("UPDATE users SET balance = balance + ? WHERE uid = ?", (add_amt, uid))
         conn.commit()
         
     await cb.answer(f"Added +₹{add_amt}")
+    
     akb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ ₹1", callback_data=f"add:{claim_id}:1"), InlineKeyboardButton(text="➕ ₹5", callback_data=f"add:{claim_id}:5")],
         [InlineKeyboardButton(text="➕ ₹10", callback_data=f"add:{claim_id}:10"), InlineKeyboardButton(text="➕ ₹50", callback_data=f"add:{claim_id}:50")],
         [InlineKeyboardButton(text="➕ ₹100", callback_data=f"add:{claim_id}:100"), InlineKeyboardButton(text="➕ ₹500", callback_data=f"add:{claim_id}:500")],
-        [InlineKeyboardButton(text=f"📩 Confirm & Send ₹{current_total}", callback_data=f"send:{claim_id}")],
+        [InlineKeyboardButton(text=f"📩 Confirm & Send ₹{new_session_amt}", callback_data=f"send:{claim_id}")],
         [InlineKeyboardButton(text="❌ Decline Request", callback_data=f"deny:{claim_id}")]
     ])
-    await cb.message.edit_caption(caption=f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{current_total}", reply_markup=akb, parse_mode="HTML")
+    await cb.message.edit_caption(caption=f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{new_session_amt}", reply_markup=akb, parse_mode="HTML")
 
-# FIXED: Restored the complete and closed handler structure below
 @dp.callback_query(F.data.startswith("send:"))
 async def admin_send_receipt_click(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_TELEGRAM_ID:
         return
-    data_list = cb.data.split(":")
-    claim_id = data_list[1]
+    _, claim_id = cb.data.split(":")
     
-    if claim_id not in pending_claims:
-        await cb.message.edit_caption(caption="❌ This payment tracking session context has expired.")
-        return
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = ?", (claim_id,)).fetchone()
+        if not row:
+            await cb.message.edit_caption(caption="❌ Already closed.")
+            return
+        uid, txn, final_session_amt = row[0], row[1], row[2]
+        conn.execute("DELETE FROM claims WHERE claim_id = ?", (claim_id,))
+        conn.commit()
         
-    uid = pending_claims[claim_id]["uid"]
+    current_bal = get_user_bal(uid)
+    await cb.message.edit_caption(caption=f"✅ Approved and sent receipt total of ₹{final_session_amt} to user <code>{uid}</code>.")
+    
+    rcpt = f"✅ <b>Payment Confirmed!</b>\n\n<b>Transaction ID:</b> <code>{txn}</code>\n<b>Amount Added:</b> ₹{final_session_amt}\n<b>Current Total Balance:</b> ₹{current_bal}\n\nThank you for choosing SKY OTP!"
+    try:
+        await bot.send_message(chat_id=uid, text=rcpt, parse_mode="HTML")
+    except Exception:
+        pass
+
+@dp.callback_query(F.data.startswith("deny:"))
+async def admin_deny_click(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_TELEGRAM_ID:
+        return
+    _, claim_id = cb.data.split(":")
+    

@@ -60,11 +60,13 @@ async def get_user_jd(uid):
 # Initialize Telethon Bot Client Instance
 bot = TelegramClient("session_data/sky_otp_master_session_v3", API_ID, API_HASH)
 
-# --- Keyboard Builders ---
+# --- Keyboard Builders Matching the New Style ---
 def main_kb():
     return [
-        [Button.text("🛍️ Buy Telegram Account", resize=True), Button.text("🗨️ Buy Whatsapp OTP", resize=True)],
-        [Button.text("💼 Wallet", resize=True), Button.text("👤 User Profile", resize=True)]
+        [Button.text("🛍️ Buy Telegram Account", resize=True)],
+        [Button.text("🗨️ Buy Whatsapp OTP", resize=True)],
+        [Button.text("💼 Wallet", resize=True), Button.text("👤 User Profile", resize=True)],
+        [Button.text("🆘 Support", resize=True), Button.text("🎁 Promocode", resize=True)]
     ]
 
 def balance_kb():
@@ -82,6 +84,7 @@ async def global_message_handler(event):
     uid = event.sender_id
     text = event.text or ""
     
+    
     # Handle /start Command
     if text.startswith("/start"):
         async with await get_db_connection() as conn:
@@ -91,7 +94,8 @@ async def global_message_handler(event):
                     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     await cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (%s, 0, %s)", (uid, now))
                     await conn.commit()
-        await event.respond("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", buttons=main_kb())
+        # ✅ MATCHED: Text matches your friend's welcoming style
+        await event.respond("👋 Hello! Welcome to SKY OTP Bot.\n\n✨ Use the buttons below to explore our services.", buttons=main_kb())
         return
 
     # Handle Wallet Button
@@ -107,13 +111,35 @@ async def global_message_handler(event):
     
     # Handle Back Button
     elif text == "🔙 Back to Main Menu":
-        await event.respond("👋 Welcome to SKY OTP BOT.", buttons=main_kb())
+        await event.respond("👋 Hello! Welcome to SKY OTP Bot.\n\n✨ Use the buttons below to explore our services.", buttons=main_kb())
         
-    # Handle Buy Button
+    # Handle Buy Buttons
     elif text == "🛍️ Buy Telegram Account":
         await event.respond("🔄 <b>Live Telegram OTP Activation Enabled</b>\n\nPlease request your code from your app now.", parse_mode='html')
 
-  # Handle Add Funds Button
+    elif text == "🗨️ Buy Whatsapp OTP":
+        await event.respond("🔄 <b>Live WhatsApp OTP Activation Enabled</b>\n\nPlease request your verification code now.", parse_mode='html')
+
+    # ✅ UPDATED: Clean English layout with clickable Instagram Link
+    elif text == "🎁 Promocode":
+        promo_msg = (
+            "<b>Follow me on Instagram to get exclusive promo codes:</b>\n\n"
+            "⬇️ <b>Instagram Profile:</b>\n"
+            "<a href='https://instagram.com'>@akash.verified</a>"
+        )
+        await event.respond(promo_msg, parse_mode='html', link_preview=False)
+
+    # ✅ ADDED: Professional English formatting for the Support button handler
+    elif text == "🆘 Support":
+        support_msg = (
+            "✈️ <b>To contact our official support team, please reach out via the details below:</b>\n\n"
+            "📱 <b>Telegram ID:</b> @Sky_Verified\n"
+            "⏰ <b>Working Hours:</b> 10:00 AM to 10:00 PM"
+        )
+        await event.respond(support_msg, parse_mode='html')
+
+    
+    # Handle Add Funds Button
     elif text == "➕ Add Funds":
         txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
         claim_id = str(random.randint(1000, 9999))

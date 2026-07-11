@@ -16,21 +16,21 @@ API_HASH = os.getenv("API_HASH", "b1d54e54de9f6a79cd1e4303142a78b4")
 
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
-DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
+
+# CHANGED: Using a fresh database name to clear corruption locks completely
+DB_PATH = "production.db"
 
 # Initialize Telethon Bot Client Instance
 bot = TelegramClient("sky_otp_bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 def init_db():
-    db_dir = os.path.dirname(DB_PATH)
-    if db_dir and not os.path.exists(db_dir):
-        os.makedirs(db_dir, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("CREATE TABLE IF NOT EXISTS users (uid INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0, join_date TEXT)")
     cursor.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid INTEGER, txn TEXT, session_amt INTEGER DEFAULT 0)")
     conn.commit()
     conn.close()
+    logging.info("Fresh database tables created successfully.")
 
 def get_user_bal(uid):
     conn = sqlite3.connect(DB_PATH)
@@ -62,14 +62,13 @@ def balance_kb():
 # --- Force Command & Interaction Handlers ---
 @bot.on(events.NewMessage)
 async def global_message_handler(event):
-    # Ignore channel or group posts to prevent database overhead
     if not event.is_private:
         return
         
     uid = event.sender_id
     text = event.text or ""
     
-    # 🌟 FORCE START COMMAND ROUTING 🌟
+    # Handle /start Command
     if text.startswith("/start"):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -82,22 +81,26 @@ async def global_message_handler(event):
         await event.respond("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", buttons=main_kb())
         return
 
-    # --- Text Menu Button Router ---
+    # Handle Wallet Button
     if text == "💼 Wallet":
         bal = get_user_bal(uid)
         await event.respond(f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", buttons=balance_kb(), parse_mode='html')
     
+    # Handle Profile Button
     elif text == "👤 User Profile":
         bal = get_user_bal(uid)
         jd = get_user_jd(uid)
         await event.respond(f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{bal}\n📅 <b>Join Date:</b> {jd}", parse_mode='html')
     
+    # Handle Back Button
     elif text == "🔙 Back to Main Menu":
         await event.respond("👋 Welcome to SKY OTP BOT.", buttons=main_kb())
         
+    # Handle Buy Button
     elif text == "🛍️ Buy Telegram Account":
         await event.respond("🔄 <b>Live Telegram OTP Activation Enabled</b>\n\nPlease request your code from your app now.", parse_mode='html')
 
+    # Handle Add Funds Button
     elif text == "➕ Add Funds":
         import qrcode
         txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
@@ -124,7 +127,7 @@ async def global_message_handler(event):
             parse_mode='html'
         )
         
-    # Catch client payment receipt photo uploads inside the unified handler context
+    # Handle Screenshot Uploads
     elif event.photo:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -151,7 +154,7 @@ async def global_message_handler(event):
         admin_text = f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0"
         await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
 
-# --- Admin Interactivity Callback Query Processors ---
+# --- Admin Callback Button Processors ---
 @bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"add:")))
 async def admin_add_click(event):
     if event.sender_id != ADMIN_TELEGRAM_ID:
@@ -235,3 +238,5 @@ async def admin_deny_click(event):
     data_str = event.data.decode('utf-8')
     _, claim_id = data_str.split(":")
     
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()

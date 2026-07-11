@@ -456,14 +456,18 @@ async def callback_handler(event):
 
                 phone_number, api_id, api_hash, string_session = account_row
 
-                # Deduct balance as integer and clear item from stock list tables
-                await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (int(price), uid))
-                await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_number,))
-                await cursor.execute(
-                    "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
-                    (phone_number, uid, "COMPLETED")
-                )
-                await conn.commit()
+     # Deduct balance as integer and clear item from stock
+        await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (price, uid))
+        await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_number,))
+        
+        # Save credentials inside status column so Check OTP can read it later
+        session_backup_data = f"{api_id}|{api_hash}|{string_session}"
+        await cursor.execute(
+            "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
+            (phone_number, uid, session_backup_data)
+        )
+        await conn.commit()
+
 
         # Build clean reservation message layout with flags
         country_flags = {

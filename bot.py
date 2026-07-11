@@ -107,7 +107,7 @@ async def text_menu_routing(client: Client, msg: Message):
         buf = io.BytesIO()
         img.save(buf, format='PNG')
         buf.seek(0)
-        buf.name = "qr.png" # Pyrogram requires a stream buffer filename identity
+        buf.name = "qr.png" 
         
         cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay.\n\n⚠️ <b>CRITICAL STEP:</b> After making the payment, simply upload your <b>Payment Screenshot</b> straight into this chat window to notify the admin.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
         
@@ -169,8 +169,8 @@ async def admin_add_click(client: Client, cb: CallbackQuery):
     
     akb = InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ ₹1", callback_data=f"add:{claim_id}:1"), InlineKeyboardButton("➕ ₹5", callback_data=f"add:{claim_id}:5")],
-        [InlineKeyboardButton("➕ ₹10", callback_data=f"add:{claim_id}:10"), InlineKeyboardButton(text="➕ ₹50", callback_data=f"add:{claim_id}:50")],
-        [InlineKeyboardButton("➕ ₹100", callback_data=f"add:{claim_id}:100"), InlineKeyboardButton(text="➕ ₹500", callback_data=f"add:{claim_id}:500")],
+        [InlineKeyboardButton("➕ ₹10", callback_data=f"add:{claim_id}:10"), InlineKeyboardButton("➕ ₹50", callback_data=f"add:{claim_id}:50")],
+        [InlineKeyboardButton("➕ ₹100", callback_data=f"add:{claim_id}:100"), InlineKeyboardButton("➕ ₹500", callback_data=f"add:{claim_id}:500")],
         [InlineKeyboardButton(f"📩 Confirm & Send ₹{new_session_amt}", callback_data=f"send:{claim_id}")],
         [InlineKeyboardButton("❌ Decline Request", callback_data=f"deny:{claim_id}")]
     ])
@@ -207,3 +207,6 @@ async def admin_deny_click(client: Client, cb: CallbackQuery):
     _, claim_id = cb.data.split(":")
     
     with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT uid FROM claims WHERE claim_id = ?", (claim_id,)).fetchone()
+        if row:
+            uid = row[0]

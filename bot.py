@@ -570,23 +570,23 @@ async def callback_handler(event):
                 if 'temp_client' in locals() and temp_client.is_connected():
                     await temp_client.disconnect()
 
-        # Update the UI layout to display the real, live code found
+                # Update the UI layout to display the real, live OTP data
         custom_otp_message = (
-            f"📞 **Phone Number:** `{target_phone}`\n\n"
+            "🇮🇳 India       ₹41.0       ✅\n\n"
+            f"📞 **Phone Number:** `{target_phone}`\n"
             f"📩 **OTP:** `{fetched_otp}`\n\n"
             "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
         )
-
+        
         retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=f"checkotp:{target_phone}")]]
         await event.edit(custom_otp_message, buttons=retry_btn_kb)
         return
-
 
 # --- Execution Runtime Initialization Loop ---
 async def main():
     await init_db()
     await bot.start(bot_token=BOT_TOKEN)
-    logging.info("SKY OTP Master Bot Infrastructure is active and listening...")
+    logging.info("SKY OTP Master Bot Infrastructure is Online.")
     await bot.run_until_disconnected()
 
 if __name__ == "__main__":

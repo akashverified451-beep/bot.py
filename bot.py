@@ -445,8 +445,7 @@ async def callback_handler(event):
                 if not account_row:
                     await event.respond("❌ **Out of Stock!** This batch has just sold out.")
                     return
-                
-                       phone_number, api_id, api_hash, string_session = account_row
+                phone_number, api_id, api_hash, string_session = account_row
                 
                 # Deduct balance and clear from public stock list
                 await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (price, uid))
@@ -460,7 +459,7 @@ async def callback_handler(event):
                 )
                 await conn.commit()
 
-        # Build clean layout framework to send to user
+               # Build clean layout framework to send to user
         delivery_message = (
             "🇮🇳 India       ₹41.0       ✅\n\n"
             f"📞 **Phone Number:** `{phone_number}`\n"
@@ -472,40 +471,37 @@ async def callback_handler(event):
         retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=f"checkotp:{phone_number}")]]
         await event.respond(delivery_message, buttons=retry_btn_kb)
         return
-         
-
-      # Build reservation message layout without the static slow text
-        delivery_message = (
-            "🇮🇳 India       ₹41.0       ✅\n\n"
-            f"📞 **Phone Number:** `{phone_number}`\n"
-            "📩 **OTP:** `⏳ NO LIVE SMS FOUND YET`\n\n"
-            "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
-        )
+ 
+        # 2. Second Step: Extract stored data logs and execute instant validation hook
+    elif data.startswith("checkotp:"):
+        _, target_phone = data.split(":")
+        target_phone = target_phone.strip()
         
-        # BULLETPROOF ALT: Embed credentials directly in button callback to bypass database completely
-        button_payload = f"chk:{phone_number}:{api_id}:{api_hash}:{string_session}"
-        retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=button_payload)]]
-        
-        await event.respond(delivery_message, buttons=retry_btn_kb)
-        return
-
-    # 2. Second Step: Extract data directly from the button payload and check instantly
-    elif data.startswith("chk:"):
         await event.answer("🔄 Scanning account inbox instantly...", alert=False)
         
-        try:
-            # Parse everything straight out of the button click context instantly
-            _, target_phone, api_id_val, api_hash_val, session_str_val = data.split(":", 4)
-        except ValueError:
-            await event.answer("❌ Session context data payload corrupted.", alert=True)
-            return
+        api_id_val = None
+        api_hash_val = None
+        session_str_val = None
+        
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                # Query active_orders table to fetch backup key details securely
+                await cursor.execute(
+                    "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", 
+                    (target_phone, uid)
+                )
+                row = await cursor.fetchone()
+                if row and row[0]:
+                    try:
+                        api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
+                    except ValueError:
+                        pass
 
         fetched_otp = "⏳ NO LIVE SMS FOUND YET"
 
         if session_str_val:
             try:
                 from telethon.sessions import StringSession
-                import asyncio
                 
                 temp_client = TelegramClient(
                     StringSession(session_str_val), 
@@ -522,7 +518,6 @@ async def callback_handler(event):
                     # Scan exclusively the official Telegram notifications user profile
                     async for msg in temp_client.iter_messages(777000, limit=1):
                         if msg.text:
-                            import re
                             otp_match = re.search(r'\b\d{5,6}\b', msg.text)
                             if otp_match:
                                 fetched_otp = otp_match.group(0)
@@ -547,7 +542,6 @@ async def callback_handler(event):
             "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
         )
         
-        # Keep the payload inside the button loop so they can click it multiple times
         retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=data)]]
         await event.edit(custom_otp_message, buttons=retry_btn_kb)
         return

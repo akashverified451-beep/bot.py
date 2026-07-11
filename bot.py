@@ -56,8 +56,8 @@ def get_user_jd(uid):
             row = cursor.fetchone()
             return row[0] if row else "N/A"
 
-# Initialize Telethon Bot Client Instance (Clean Session to avoid locking)
-bot = TelegramClient("sky_otp_master_session", API_ID, API_HASH)
+# Initialize Telethon Bot Client Instance
+bot = TelegramClient("sky_otp_master_session_v3", API_ID, API_HASH)
 
 # --- Keyboard Builders ---
 def main_kb():

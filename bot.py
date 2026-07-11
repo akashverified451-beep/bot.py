@@ -135,63 +135,81 @@ async def global_message_handler(event):
         return
 
     
-   # 5. Handle Buy Telegram Account Button (Fully Dynamic Auto-Country Listing)
+    # 5. Handle Buy Telegram Account Button (Fully Automated Global Dynamic Inventory)
     elif text == "🛍️ Buy Telegram Account":
-        # Global country layout configuration profile setup maps
-        country_meta = {
-            "Colombia": {"flag": "🇨🇴", "price": 36.23},
-            "Nigeria": {"flag": "🇳🇬", "price": 36.23},
-            "Bangladesh": {"flag": "🇧🇩", "price": 40.04},
-            "Canada": {"flag": "🇨🇦", "price": 40.04},
-            "USA": {"flag": "🇺🇸", "price": 41.00},
-            "India": {"flag": "🇮🇳", "price": 41.00},
-            "Japan": {"flag": "🇯🇵", "price": 45.00},    # Add new entries here easily
-            "Nepal": {"flag": "🇳🇵", "price": 35.00}     # Set custom pricing rules
+        # 1. Global Price Rule Configuration Map (Set your default & custom rules)
+        DEFAULT_PRICE = 53.39
+        custom_prices = {
+            "Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04,
+            "Canada": 40.04, "United States": 41.00, "India": 41.00, "Ethiopia": 41.00
         }
 
-        # Query database to aggregate counts grouped dynamically by target prefix keys
+        # 2. Automated Country-to-Emoji Flag Reference Engine
+        country_flags = {
+            "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
+            "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹", "Egypt": "🇪🇬",
+            "Iran": "🇮🇷", "Pakistan": "🇵🇰", "Indonesia": "🇮🇩", "Kenya": "🇰🇪",
+            "Chile": "🇨🇱", "Togo": "🇹🇬", "Angola": "🇦🇴", "Japan": "🇯🇵", "Nepal": "🇳🇵"
+        }
+
+        # 3. Dynamic Phone Prefix Map Identifier Matrix
+        prefix_to_country = {
+            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
+            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
+            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
+            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
+        }
+
+        # 4. Fetch every available stock item row from your database
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
-                # Scans all active sessions inside stock inventory tables
                 await cursor.execute("SELECT phone_number FROM available_accounts")
                 all_numbers = await cursor.fetchall()
 
-        # Compile totals dynamically based on matching country string conditions
-        stock_counts = {country: 0 for country in country_meta}
+        # 5. Automatically group and count stock quantities based on prefix matching
+        inventory = {}
         for (phone,) in all_numbers:
-            if phone.startswith("+57"): stock_counts["Colombia"] += 1
-            elif phone.startswith("+234"): stock_counts["Nigeria"] += 1
-            elif phone.startswith("+880"): stock_counts["Bangladesh"] += 1
-            elif phone.startswith("+1"): 
-                # Differentiate between USA and Canada if necessary, or group them together
-                stock_counts["USA"] += 1 
-            elif phone.startswith("+91"): stock_counts["India"] += 1
-            elif phone.startswith("+81"): stock_counts["Japan"] += 1
-            elif phone.startswith("+977"): stock_counts["Nepal"] += 1
+            clean_phone = phone.strip()
+            detected_country = "Other International"
+            
+            # Match the starting digits against our known international prefix map
+            for prefix, name in prefix_to_country.items():
+                if clean_phone.startswith(prefix):
+                    detected_country = name
+                    break
+            
+            # Group into the active storefront counter
+            if detected_country not in inventory:
+                inventory[detected_country] = 0
+            inventory[detected_country] += 1
 
-        # Initialise standard presentation row layout components headers
+        # Initialize main presentation storefront data row header layout labels
         tg_services_kb = [
             [Button.inline("🌍 Country", data="lbl"), Button.inline("💰 Price", data="lbl"), Button.inline("📦 Stock", data="lbl")]
         ]
 
-        # Dynamically append interactive checkout buttons only if inventory contains active items
-        for country, info in country_meta.items():
-            stock_qty = stock_counts.get(country, 0)
-            flag = info["flag"]
-            price_val = info["price"]
-            
-            # Format custom target data payload tracking string parameters signatures
-            btn_callback = f"buy:{country}:{price_val}"
-            
+        # 6. Dynamically build rows ONLY for countries that actually have active stock!
+        for country_name, stock_qty in inventory.items():
+            flag = country_flags.get(country_name, "🌍")
+            price_val = custom_prices.get(country_name, DEFAULT_PRICE)
+            btn_callback = f"buy:{country_name}:{price_val}"
+
             tg_services_kb.append([
-                Button.inline(f"{flag} {country}", data=btn_callback),
+                Button.inline(f"{flag} {country_name}", data=btn_callback),
                 Button.inline(f"₹{price_val}", data=btn_callback),
-                Button.inline(f"📝 {stock_qty}", data=btn_callback)
+                Button.inline(f"[{stock_qty}] ✅", data=btn_callback)
             ])
+
+        # If store inventory records evaluate empty, render a placeholder notification
+        if len(tg_services_kb) == 1:
+            await event.respond("📭 **The store is currently empty!** Admin has not uploaded stock yet.")
+            event.handled = True
+            return
 
         await event.respond("📊 <b>Available Telegram Services</b>", buttons=tg_services_kb, parse_mode='html')
         event.handled = True
         return
+
 
 
     # 6. Handle Buy Whatsapp OTP Button

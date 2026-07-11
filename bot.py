@@ -389,19 +389,19 @@ async def cancel_or_deny_click(event):
         async with conn.cursor() as cursor:
             await cursor.execute("DELETE FROM claims WHERE claim_id = %s", (str(claim_id),))
             await conn.commit()
-            
-    await event.edit("❌ Request has been declined and cancelled successfully.")
+            await event.edit("❌ Request has been processed")
 
-    
-# Send dynamic PNG buffer directly over Telegram without local storage leaks
-        await bot.send_file(
-            event.chat_id, 
-            image_stream, 
-            caption=deposit_instruction, 
-            parse_mode='html'
-        )
-        event.handled = True
-        return
+  
+# Send dynamic PNG buffer directly over
+    await bot.send_file(
+        event.chat_id,
+        image_stream,
+        caption=deposit_instruction,
+        parse_mode='html'
+    )
+    event.handled = True
+    return
+
 
 # --- Updated Callback Handler with Dynamic Check OTP Button ---
 @bot.on(events.CallbackQuery)

@@ -288,14 +288,13 @@ async def callback_handler(event):
         await event.answer()
         return
 
-    # 1. First Step: User clicks a country button to reserve a number
-        if data.startswith("buy:"):
+        # 1. First Step: User clicks a country button to reserve a number
+    if data.startswith("buy:"):
         _, country, price_str = data.split(":")
         price = float(price_str)
-
         await event.answer("Reserving number...", alert=False)
 
-        # Updated prefix map matching your automated listing entries exactly
+  # Updated prefix map matching your automated listing entries exactly
         country_prefixes = {
             "Colombia": "+57%", 
             "Nigeria": "+234%", 

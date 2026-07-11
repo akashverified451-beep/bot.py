@@ -4,25 +4,38 @@ import logging
 import io
 import sqlite3
 import asyncio
-import time
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
 from aiogram.filters import CommandStart
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.fsm.context import FSMContext
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
+
+# 🔄 UPDATED DATABASE CONFIGURATION FOR RENDER PERSISTENT DISKS
 DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
 
 pending_claims = {}
 
+class DepositStates(StatesGroup):
+    waiting_for_screenshot = State()
+
 def init_db():
+    # Automatically creates the database folder if it doesn't exist yet on the disk
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
+        logging.info(f"Created persistent database directory structure at: {db_dir}")
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS users (uid INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0, join_date TEXT)")
         conn.commit()
+    logging.info(f"Connected successfully to SQLite database at: {DB_PATH}")
 
 def get_user_bal(uid):
     with sqlite3.connect(DB_PATH) as conn:
@@ -99,17 +112,41 @@ async def add_funds_handler(msg: Message):
     await msg.answer_photo(photo=BufferedInputFile(buf.read(), filename="qr.png"), caption=cap, parse_mode="HTML", reply_markup=kb)
 
 @dp.callback_query(F.data.startswith("req:"))
-async def handle_status_check(cb: CallbackQuery):
+async def handle_status_check(cb: CallbackQuery, state: FSMContext):
     claim_id = cb.data.split(":")[1]
     if claim_id not in pending_claims:
         await cb.answer("❌ This payment session expired or has already been reviewed.")
         return
         
+    await state.update_data(current_claim_id=claim_id)
+    
+    await cb.message.edit_caption(
+        caption="⚠️ <b>Payment Verification Required</b>\n\n"
+                "Please upload and send a clear <b>screenshot image</b> of your transaction payment receipt now.\n\n"
+                "<i>*Note: Your deposit request will not reach the administrator without your screenshot image submission.</i>", 
+        parse_mode="HTML"
+    )
+    
+    await state.set_state(DepositStates.waiting_for_screenshot)
+    await cb.answer()
+
+@dp.message(DepositStates.waiting_for_screenshot, F.photo)
+async def process_payment_screenshot(msg: Message, state: FSMContext):
+    state_data = await state.get_data()
+    claim_id = state_data.get("current_claim_id")
+    
+    if not claim_id or claim_id not in pending_claims:
+        await msg.answer("❌ Your payment tracking context expired. Please tap '➕ Add Funds' to create a new request.")
+        await state.clear()
+        return
+
     uid = pending_claims[claim_id]["uid"]
     txn = pending_claims[claim_id]["txn"]
     
-    await cb.answer("⏳ Verification request sent to admin! Please wait.", show_alert=True)
-    await cb.message.edit_caption(caption="⏳ <b>Verification Request Sent</b>\n\nThe admin is verifying your transaction details now.", parse_mode="HTML")
+    photo_file_id = msg.photo[-1].file_id
+    
+    await msg.answer("⏳ <b>Screenshot Uploaded!</b>\nYour verification request along with your screenshot has been dispatched to the admin. Please await confirmation.", parse_mode="HTML")
+    await state.clear()
     
     akb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ ₹1", callback_data=f"add:{claim_id}:1"), InlineKeyboardButton(text="➕ ₹5", callback_data=f"add:{claim_id}:5")],
@@ -118,7 +155,13 @@ async def handle_status_check(cb: CallbackQuery):
         [InlineKeyboardButton(text="📩 Confirm & Send Receipt", callback_data=f"send:{claim_id}")],
         [InlineKeyboardButton(text="❌ Decline Request", callback_data=f"deny:{claim_id}")]
     ])
-    await bot.send_message(chat_id=ADMIN_TELEGRAM_ID, text=f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0", reply_markup=akb, parse_mode="HTML")
+    
+    admin_text = f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0"
+    await bot.send_photo(chat_id=ADMIN_TELEGRAM_ID, photo=photo_file_id, caption=admin_text, reply_markup=akb, parse_mode="HTML")
+
+@dp.message(DepositStates.waiting_for_screenshot)
+async def process_invalid_screenshot_type(msg: Message):
+    await msg.answer("❌ <b>Invalid File Type!</b>\n\nYou must send a <b>screenshot image</b> as proof. Text strings or stickers cannot be accepted for manual review. Please send the image.")
 
 @dp.callback_query(F.data.startswith("add:"))
 async def admin_add_click(cb: CallbackQuery):
@@ -127,7 +170,7 @@ async def admin_add_click(cb: CallbackQuery):
     add_amt = int(add_amt)
     
     if claim_id not in pending_claims:
-        await cb.message.edit_text("❌ This transaction claim tracking context has expired.")
+        await cb.message.edit_caption(caption="❌ This transaction claim tracking context has expired.")
         return
         
     uid = pending_claims[claim_id]["uid"]
@@ -149,7 +192,7 @@ async def admin_add_click(cb: CallbackQuery):
         [InlineKeyboardButton(text=f"📩 Confirm & Send ₹{current_total}", callback_data=f"send:{claim_id}")],
         [InlineKeyboardButton(text="❌ Decline Request", callback_data=f"deny:{claim_id}")]
     ])
-    await cb.message.edit_text(text=f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{current_total}", reply_markup=akb, parse_mode="HTML")
+    await cb.message.edit_caption(caption=f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{current_total}", reply_markup=akb, parse_mode="HTML")
 
 @dp.callback_query(F.data.startswith("send:"))
 async def admin_send_receipt_click(cb: CallbackQuery):
@@ -157,51 +200,4 @@ async def admin_send_receipt_click(cb: CallbackQuery):
     claim_id = cb.data.split(":")[1]
     
     if claim_id not in pending_claims:
-        await cb.message.edit_text("❌ This payment tracking session context has expired.")
-        return
-        
-    uid = pending_claims[claim_id]["uid"]
-    txn = pending_claims[claim_id]["txn"]
-    final_session_amt = pending_claims[claim_id]["session_amt"]
-    
-    del pending_claims[claim_id]
-    
-    current_bal = get_user_bal(uid)
-    await cb.message.edit_text(f"✅ Approved and sent receipt total of ₹{final_session_amt} to user <code>{uid}</code>.")
-    
-    rcpt = f"✅ <b>Payment Confirmed!</b>\n\n<b>Transaction ID:</b> <code>{txn}</code>\n<b>Amount Added:</b> ₹{final_session_amt}\n<b>Current Total Balance:</b> ₹{current_bal}\n\nThank you for choosing SKY OTP!"
-    try: await bot.send_message(chat_id=uid, text=rcpt, parse_mode="HTML")
-    except Exception: pass
-
-@dp.callback_query(F.data.startswith("deny:"))
-async def admin_deny_click(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_TELEGRAM_ID: return
-    claim_id = cb.data.split(":")[1]
-    
-    if claim_id in pending_claims:
-        uid = pending_claims[claim_id]["uid"]
-        del pending_claims[claim_id]
-        await cb.message.edit_text(f"❌ Denied request from user <code>{uid}</code>.")
-        try: await bot.send_message(chat_id=uid, text="❌ Your transaction review request was declined by the administrator.")
-        except Exception: pass
-
-@dp.callback_query(F.data == "cancel")
-async def cancel_click(cb: CallbackQuery):
-    try: await cb.message.delete()
-    except Exception: pass
-
-async def main():
-    init_db()
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
-
-# FIXED: Structural blocks completely filled and fully aligned to remove all IndentationErrors
-if __name__ == "__main__":
-    while True:
-        try:
-            asyncio.run(main())
-        except (KeyboardInterrupt, SystemExit):
-            logging.info("Bot manually shut down.")
-            break
-        except Exception as error:
-            logging.error(f"Restarting loop due to error: {error}")
+        await cb.message.edit_caption(caption="❌ This payment tracking session context has expired.")

@@ -402,16 +402,7 @@ async def cancel_or_deny_click(event):
     event.handled = True
     return
 
-                    (target_phone, uid)
-                )
-                row = await cursor.fetchone()
-                if row and row[0]:
-                    try:
-                        api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
-                    except ValueError:
-                        pass
 
- 
 # --- Complete High-Speed Error-Free Callback & Logic Engine ---
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
@@ -435,7 +426,6 @@ async def callback_handler(event):
                 await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
                 user_row = await cursor.fetchone()
                 
-                # FIXED: Extracting the actual integer value at index 0 from the SQL tuple
                 user_balance = user_row[0] if user_row else 0
                 
                 if user_balance < price:
@@ -462,13 +452,6 @@ async def callback_handler(event):
                 await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (price, uid))
                 # Delete item from available stock so nobody else can buy it
                 await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_number,))
-                
-                # Backup session keys inside status column so Check OTP can log in later
-                session_backup_data = f"{api_id}|{api_hash}|{string_session}"
-                await cursor.execute(
-                    "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
-                    (phone_number, uid, session_backup_data)
-                )
                 await conn.commit()
 
         # Build reservation message layout without the static slow text
@@ -478,35 +461,24 @@ async def callback_handler(event):
             "📩 **OTP:** `⏳ NO LIVE SMS FOUND YET`\n\n"
             "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
         )
-        retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=f"checkotp:{phone_number}")]]
+        
+        # BULLETPROOF ALT: Embed credentials directly in button callback to bypass database completely
+        button_payload = f"chk:{phone_number}:{api_id}:{api_hash}:{string_session}"
+        retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=button_payload)]]
         
         await event.respond(delivery_message, buttons=retry_btn_kb)
         return
 
-    # 2. Second Step: Extract stored data logs and execute instant validation hook
-    elif data.startswith("checkotp:"):
-        _, target_phone = data.split(":")
-        target_phone = target_phone.strip()
-        
+    # 2. Second Step: Extract data directly from the button payload and check instantly
+    elif data.startswith("chk:"):
         await event.answer("🔄 Scanning account inbox instantly...", alert=False)
         
-        api_id_val = None
-        api_hash_val = None
-        session_str_val = None
-        
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                # Query active_orders table to fetch backup key details securely
-                await cursor.execute(
-                    "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", 
-                    (target_phone, uid)
-                )
-                row = await cursor.fetchone()
-                if row and row[0]:
-                    try:
-                        api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
-                    except ValueError:
-                        pass
+        try:
+            # Parse everything straight out of the button click context instantly
+            _, target_phone, api_id_val, api_hash_val, session_str_val = data.split(":", 4)
+        except ValueError:
+            await event.answer("❌ Session context data payload corrupted.", alert=True)
+            return
 
         fetched_otp = "⏳ NO LIVE SMS FOUND YET"
 
@@ -555,7 +527,8 @@ async def callback_handler(event):
             "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
         )
         
-        retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=f"checkotp:{target_phone}")]]
+        # Keep the payload inside the button loop so they can click it multiple times
+        retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=data)]]
         await event.edit(custom_otp_message, buttons=retry_btn_kb)
         return
 

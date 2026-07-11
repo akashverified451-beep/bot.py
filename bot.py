@@ -21,7 +21,7 @@ YOUR_UPI_ID = "skyotpprovider@axisbank"
 DB_PATH = "production.db"
 
 # Initialize Telethon Bot Client Instance
-bot = TelegramClient("sky_otp_bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+bot = TelegramClient("sky_otp_bot_session_v2", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)

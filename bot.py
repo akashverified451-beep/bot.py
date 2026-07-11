@@ -164,16 +164,14 @@ async def global_message_handler(event):
         await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
 
 # --- Admin Callback Button Processors ---
-@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"add:")))
-async def admin_add_click(event):
+@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"send:")))
+async def admin_send_receipt_click(event):
     if event.sender_id != ADMIN_TELEGRAM_ID:
         return
-    
-    await event.answer()  # Resolve Telegram's loading spinner immediately
-    
+        
+    await event.answer()
     data_str = event.data.decode('utf-8')
-    _, claim_id, add_amt = data_str.split(":")
-    add_amt = int(add_amt)
+    _, claim_id = data_str.split(":")
     
     async with await get_db_connection() as conn:
         async with conn.cursor() as cursor:
@@ -181,15 +179,26 @@ async def admin_add_click(event):
             row = await cursor.fetchone()
             
             if not row:
-                await event.edit("❌ This claim has expired or was already closed.")
+                await event.edit("❌ Already closed.")
                 return
                 
-            uid, txn, session_amt = row[0], row[1], row[2]
-            new_session_amt = session_amt + add_amt
+            # ✅ FIXED: Correctly extracting data from the database array
+            uid = row[0]
+            txn = row[1]
+            session_amt = row[2]
             
-            await cursor.execute("UPDATE claims SET session_amt = %s WHERE claim_id = %s", (new_session_amt, claim_id))
-            await cursor.execute("UPDATE users SET balance = balance + %s WHERE uid = %s", (add_amt, uid))
+            # Remove completed claim tracking log entry
+            await cursor.execute("DELETE FROM claims WHERE claim_id = %s", (claim_id,))
             await conn.commit()
+
+    # Inform the user and complete the admin view update
+    try:
+        await bot.send_message(entity=uid, message=f"✅ <b>Deposit Confirmed!</b>\n\n💰 ₹{session_amt} has been successfully added to your wallet balance.", parse_mode='html')
+        await event.edit(f"✅ Approved and sent ₹{session_amt} to user <code>{uid}</code>", parse_mode='html')
+    except Exception as e:
+        logging.error(f"Failed to send confirmation message to user: {e}")
+        await event.edit(f"✅ Approved in DB, but couldn't message user. Amount: ₹{session_amt}", parse_mode='html')
+
     
     akb = [
         [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],

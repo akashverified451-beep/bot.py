@@ -113,7 +113,7 @@ async def global_message_handler(event):
     elif text == "🛍️ Buy Telegram Account":
         await event.respond("🔄 <b>Live Telegram OTP Activation Enabled</b>\n\nPlease request your code from your app now.", parse_mode='html')
 
-    # Handle Add Funds Button
+  # Handle Add Funds Button
     elif text == "➕ Add Funds":
         txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
         claim_id = str(random.randint(1000, 9999))
@@ -129,7 +129,8 @@ async def global_message_handler(event):
         buf.seek(0)
         buf.name = "qr.png" 
         
-        cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay.\n\n⚠️ <b>CRITICAL STEP:</b> After making the payment, simply upload your <b>Payment Screenshot</b> straight into this chat window to notify the admin.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
+        # ✅ UPDATED: Message formatting updated as requested
+        cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay.\n\n⚠️ : After making the payment, simply upload your Payment Screenshot for verification the payment.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
         
         await event.respond(
             cap,
@@ -137,7 +138,7 @@ async def global_message_handler(event):
             buttons=[[Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]],
             parse_mode='html'
         )
-        
+    
     # Handle Screenshot Uploads
     elif event.photo:
         async with await get_db_connection() as conn:
@@ -242,6 +243,26 @@ async def admin_send_receipt_click(event):
     except Exception as e:
         logging.error(f"Failed to send confirmation message to user: {e}")
         await event.edit(f"✅ Approved in DB, but couldn't message user. Amount: ₹{session_amt}", parse_mode='html')
+
+# --- 3. FIXED CANCEL & DENY BUTTON HANDLER ---
+@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"deny:") or d.startswith(b"cancel:")))
+async def cancel_or_deny_click(event):
+    await event.answer()  # Stops the loading spinner instantly
+    
+    data_str = event.data.decode('utf-8')
+    
+    if ":" in data_str:
+        action, claim_id = data_str.split(":", 1)
+    else:
+        await event.edit("❌ This request data structure is broken.")
+        return
+    
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("DELETE FROM claims WHERE claim_id = %s", (str(claim_id),))
+            await conn.commit()
+            
+    await event.edit("❌ Request has been declined and cancelled successfully.")
 
 # --- Startup and Initialization Loop ---
 async def main():

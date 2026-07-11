@@ -215,8 +215,9 @@ async def check_otp_click(event):
 async def label_click_absorber(event):
     # Stops any processing actions if a user clicks a table column header
     await event.answer()
-  
-    elif text == "🗨️ Buy Whatsapp OTP":
+
+    # Handle Buy Buttons
+      elif text == "🗨️ Buy Whatsapp OTP":
         await event.respond("🔄 <b>Live WhatsApp OTP Activation Enabled</b>\n\nPlease request your verification code now.", parse_mode='html')
 
     # ✅ UPDATED: Clean English layout with clickable Instagram Link

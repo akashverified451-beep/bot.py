@@ -413,12 +413,16 @@ async def callback_handler(event):
         await event.answer()
         return
 
-    # 1. First Step: User clicks a country purchase option
+    # 1. First Step: User clicks a country purchase button
     if data.startswith("buy_tg_"):
-        country = data.replace("buy_tg_", "").strip()
+        # Add this line right here to stop the "not responding" error instantly!
+        await event.answer("Fetching your number...", alert=False)
+        
+        country = data.replace("buy_tg_", "")
         DEFAULT_PRICE = 53.39
-        custom_prices = {"Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04, "Canada": 40.04, "United States": 41.00, "India": 41.00, "Ethiopia": 41.00}
+        custom_prices = {"Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04, "India": 41.00} # Ensure India is in this dict
         price = int(custom_prices.get(country, DEFAULT_PRICE))
+
         
         # Open fresh connection line immediately on click to prevent closed connection errors
         async with await get_db_connection() as conn:

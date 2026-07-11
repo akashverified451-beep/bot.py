@@ -288,41 +288,29 @@ async def callback_handler(event):
         await event.answer()
         return
 
-        # 1. First Step: User clicks a country button to reserve a number
+            # 1. First Step: User clicks a country button to reserve a number
     if data.startswith("buy:"):
         _, country, price_str = data.split(":")
         price = float(price_str)
+
         await event.answer("Reserving number...", alert=False)
 
-  # Updated prefix map matching your automated listing entries exactly
         country_prefixes = {
-            "Colombia": "+57%", 
-            "Nigeria": "+234%", 
-            "Bangladesh": "+880%",
-            "Canada": "+1%", 
-            "United States": "+1%",   # Fixed name mapping from USA to United States
-            "India": "+91%",
-            "Ethiopia": "+251%", 
-            "Egypt": "+20%", 
-            "Iran": "+98%", 
-            "Pakistan": "+92%", 
-            "Indonesia": "+62%", 
-            "Kenya": "+254%", 
-            "Chile": "+56%", 
-            "Togo": "+228%", 
-            "Angola": "+244%",
-            "Japan": "+81%", 
-            "Nepal": "+977%"
+            "Colombia": "+57%", "Nigeria": "+234%", "Bangladesh": "+880%",
+            "Canada": "+1%", "United States": "+1%", "India": "+91%",
+            "Ethiopia": "+251%", "Egypt": "+20%", "Iran": "+98%", 
+            "Pakistan": "+92%", "Indonesia": "+62%", "Kenya": "+254%", 
+            "Chile": "+56%", "Togo": "+228%", "Angola": "+244%",
+            "Japan": "+81%", "Nepal": "+977%"
         }
         prefix = country_prefixes.get(country, "%")
 
-
-     async with await get_db_connection() as conn:
+        async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 # Check user wallet balance
                 await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
                 user_row = await cursor.fetchone()
-                user_balance = user_row[0] if user_row else 0
+                user_balance = user_row if user_row else 0
 
                 if user_balance < price:
                     await event.respond(f"❌ **Insufficient Funds!**\n\nYour balance: ₹{user_balance}\nRequired amount: ₹{price}\n\nPlease refill your wallet.")
@@ -350,8 +338,8 @@ async def callback_handler(event):
                 )
                 await conn.commit()
 
-        # Build clean reservation message layout with the visual emoji text flags
-        country_flags = {"Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦", "USA": "🇺🇸", "India": "🇮🇳"}
+        # Build clean reservation message layout with flags
+        country_flags = {"Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦", "United States": "🇺🇸", "India": "🇮🇳"}
         flag = country_flags.get(country, "🌍")
 
         delivery_message = (
@@ -362,12 +350,21 @@ async def callback_handler(event):
             "🌟 **Note:** Number cannot be cancelled because OTP Delivery is guaranteed!"
         )
 
-        # Attach the 📩 Check OTP button containing the reserved phone number inside its data payload signature
+        # Attach the 📩 Check OTP button with the phone number payload
         otp_btn_kb = [[Button.inline("📩 Check OTP", data=f"checkotp:{phone_number}")]]
         await event.respond(delivery_message, buttons=otp_btn_kb)
+
+        # ADMIN SALE NOTIFICATION ALERT
+        try:
+            await bot.send_message(
+                ADMIN_TELEGRAM_ID, 
+                f"💰 **Sale Alert!**\nUser `{uid}` reserved a **{country}** number (`{phone_number}`) for ₹{price}."
+            )
+        except Exception:
+            pass
         return
 
-        # 2. Second Step: Automatically log in using the session string and read the real OTP
+    # 2. Second Step: Automatically log in using the session string and read the real OTP
     elif data.startswith("checkotp:"):
         _, target_phone = data.split(":")
         

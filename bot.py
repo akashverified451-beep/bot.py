@@ -13,7 +13,7 @@ from telethon import TelegramClient, events, Button
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Load secure configuration states
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAGN9YLH9ykLKDtvewuJydI3efFkW5grAQo")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAGSEER5HzYb69RK5zOlgR9KDmQArRR54VU")
 API_ID = int(os.getenv("API_ID", "33033843")) 
 API_HASH = os.getenv("API_HASH", "27d91aac298b61038f19ee5c1b1f3f48")
 
@@ -166,57 +166,40 @@ async def global_message_handler(event):
                 await cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
                 await conn.commit()
         
-        img = qrcode.make(f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR")
-        buf = io.BytesIO()
-        img.save(buf, format='PNG')
-        buf.seek(0)
-        buf.name = "qr.png" 
+        # Build strict UPI standard format string payload
+        upi_payload = f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP_BOT&tr={txn}&tn=Wallet_Refill_{claim_id}"
         
-        cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay.\n\n⚠️ : After making the payment, simply upload your Payment Screenshot for verification the payment.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
+        # Draw and output the image matrix arrays via internal memory operations
+        qr_img = qrcode.make(upi_payload)
+        image_stream = io.BytesIO()
+        qr_img.save(image_stream, format="PNG")
+        image_stream.seek(0)
         
-        await event.respond(cap, file=buf, buttons=[[Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]], parse_mode='html')
+        deposit_instruction = (
+            "💳 <b>Deposit System Initialized</b>\n\n"
+            f"1️⃣ Scan the generated QR code with any UPI app.\n"
+            f"2️⃣ Complete the payment transaction.\n"
+            f"3️⃣ Copy your 12-digit transaction ID (UTR).\n\n"
+            f"⚠️ <b>Claim ID:</b> <code>{claim_id}</code>\n\n"
+            "Send your UTR/Txn ID here in the chat to claim your funds automatically."
+        )
+        
+        # Send dynamic PNG buffer directly over Telegram without local storage leaks
+        await bot.send_file(
+            event.chat_id, 
+            image_stream, 
+            caption=deposit_instruction, 
+            parse_mode='html'
+        )
         event.handled = True
         return
-        
-    # 10. Handle Screenshot Uploads
-    elif event.photo:
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = %s ORDER BY claim_id DESC LIMIT 1", (uid,))
-                row = await cursor.fetchone()
-            
-        if not row:
-            await event.respond("❌ You don't have any active deposit generation requests open. Please click '➕ Add Funds' first.")
-            return
-            
-        claim_id = row[0]
-        txn = row[1]
-        await event.respond("⏳ <b>Screenshot Received!</b>\nYour proof has been sent to the admin for manual verification.", parse_mode='html')
-        
-        akb = [
-            [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
-            [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
-            [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
-            [Button.inline("📩 Confirm & Send", data=f"send:{claim_id}")],
 
-# --- Startup and Initialization Loop ---
+# --- Execution Runtime Initialization Loop ---
 async def main():
-    # ✅ FIX: Automatically verify and create the folder so SQLite never throws an error
-    session_dir = "session_data"
-    if not os.path.exists(session_dir):
-        os.makedirs(session_dir)
-        logging.info(f"Created missing directory structural path: {session_dir}")
-
-    # 1. Initialize structural DB layout
     await init_db()
-    
-    # 2. Start the Telethon Bot Client using the token
     await bot.start(bot_token=BOT_TOKEN)
-    logging.info("🚀 SKY OTP Master Bot is now online and listening for events...")
-    
-    # 3. Keep the script alive and running
+    logging.info("SKY OTP Master Bot Infrastructure is active and listening...")
     await bot.run_until_disconnected()
 
 if __name__ == "__main__":
-    # Run the async loop
     asyncio.run(main())

@@ -42,20 +42,26 @@ def init_db():
     db_dir = os.path.dirname(DB_PATH)
     if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir, exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS users (uid INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0, join_date TEXT)")
-        conn.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid INTEGER, txn TEXT, session_amt INTEGER DEFAULT 0)")
-        conn.commit()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE IF NOT EXISTS users (uid INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0, join_date TEXT)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid INTEGER, txn TEXT, session_amt INTEGER DEFAULT 0)")
+    conn.commit()
+    conn.close()
 
 def get_user_bal(uid):
-    with sqlite3.connect(DB_PATH) as conn:
-        row = conn.execute("SELECT balance FROM users WHERE uid = ?", (uid,)).fetchone()
-        return row[0] if row else 0
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    row = cursor.execute("SELECT balance FROM users WHERE uid = ?", (uid,)).fetchone()
+    conn.close()
+    return row[0] if row else 0
 
 def get_user_jd(uid):
-    with sqlite3.connect(DB_PATH) as conn:
-        row = conn.execute("SELECT join_date FROM users WHERE uid = ?", (uid,)).fetchone()
-        return row[0] if row else "N/A"
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    row = cursor.execute("SELECT join_date FROM users WHERE uid = ?", (uid,)).fetchone()
+    conn.close()
+    return row[0] if row else "N/A"
 
 # --- Keyboard Builders ---
 def main_kb():
@@ -75,11 +81,14 @@ def balance_kb():
 @app.on_message(filters.command("start"))
 async def cmd_start(client: Client, msg: Message):
     uid = msg.from_user.id
-    with sqlite3.connect(DB_PATH) as conn:
-        if not conn.execute("SELECT uid FROM users WHERE uid = ?", (uid,)).fetchone():
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            conn.execute("INSERT INTO users (uid, balance, join_date) VALUES (?, 0, ?)", (uid, now))
-            conn.commit()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    check_user = cursor.execute("SELECT uid FROM users WHERE uid = ?", (uid,)).fetchone()
+    if not check_user:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (?, 0, ?)", (uid, now))
+        conn.commit()
+    conn.close()
     await msg.reply_text("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", reply_markup=main_kb())
 
 @app.on_message(filters.text & filters.private)
@@ -107,9 +116,11 @@ async def text_menu_routing(client: Client, msg: Message):
         txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
         claim_id = str(random.randint(1000, 9999))
         
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (?, ?, ?)", (claim_id, uid, txn))
-            conn.commit()
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (?, ?, ?)", (claim_id, uid, txn))
+        conn.commit()
+        conn.close()
         
         img = qrcode.make(f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR")
         buf = io.BytesIO()
@@ -130,14 +141,17 @@ async def text_menu_routing(client: Client, msg: Message):
 async def process_stateless_screenshot(client: Client, msg: Message):
     uid = msg.from_user.id
     
-    with sqlite3.connect(DB_PATH) as conn:
-        row = conn.execute("SELECT claim_id, txn FROM claims WHERE uid = ? ORDER BY claim_id DESC LIMIT 1", (uid,)).fetchone()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    row = cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = ? ORDER BY claim_id DESC LIMIT 1", (uid,)).fetchone()
+    conn.close()
         
     if not row:
         await msg.reply_text("❌ You don't have any active deposit generation requests open. Please click '➕ Add Funds' first.")
         return
         
-    claim_id, txn = row[0], row[1]
+    claim_id = row[0]
+    txn = row[1]
     photo_file_id = msg.photo.file_id
     
     await msg.reply_text("⏳ <b>Screenshot Received!</b>\nYour proof has been sent to the admin for manual verification.")
@@ -161,17 +175,24 @@ async def admin_add_click(client: Client, cb: CallbackQuery):
     _, claim_id, add_amt = cb.data.split(":")
     add_amt = int(add_amt)
     
-    with sqlite3.connect(DB_PATH) as conn:
-        row = conn.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = ?", (claim_id,)).fetchone()
-        if not row:
-            await cb.message.edit_caption("❌ This claim has expired or was already closed.")
-            return
-        uid, txn, session_amt = row[0], row[1], row[2]
-        new_session_amt = session_amt + add_amt
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    row = cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = ?", (claim_id,)).fetchone()
+    
+    if not row:
+        conn.close()
+        await cb.message.edit_caption("❌ This claim has expired or was already closed.")
+        return
         
-        conn.execute("UPDATE claims SET session_amt = ? WHERE claim_id = ?", (new_session_amt, claim_id))
-        conn.execute("UPDATE users SET balance = balance + ? WHERE uid = ?", (add_amt, uid))
-        conn.commit()
+    uid = row[0]
+    txn = row[1]
+    session_amt = row[2]
+    new_session_amt = session_amt + add_amt
+    
+    cursor.execute("UPDATE claims SET session_amt = ? WHERE claim_id = ?", (new_session_amt, claim_id))
+    cursor.execute("UPDATE users SET balance = balance + ? WHERE uid = ?", (add_amt, uid))
+    conn.commit()
+    conn.close()
         
     await cb.answer(f"Added +₹{add_amt}")
     
@@ -190,14 +211,22 @@ async def admin_send_receipt_click(client: Client, cb: CallbackQuery):
         return
     _, claim_id = cb.data.split(":")
     
-    with sqlite3.connect(DB_PATH) as conn:
-        row = conn.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = ?", (claim_id,)).fetchone()
-        if not row:
-            await cb.message.edit_caption("❌ Already closed.")
-            return
-        uid, txn, final_session_amt = row[0], row[1], row[2]
-        conn.execute("DELETE FROM claims WHERE claim_id = ?", (claim_id,))
-        conn.commit()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    row = cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = ?", (claim_id,)).fetchone()
+    
+    if not row:
+        conn.close()
+        await cb.message.edit_caption("❌ Already closed.")
+        return
+        
+    uid = row[0]
+    txn = row[1]
+    final_session_amt = row[2]
+    
+    cursor.execute("DELETE FROM claims WHERE claim_id = ?", (claim_id,))
+    conn.commit()
+    conn.close()
         
     current_bal = get_user_bal(uid)
     await cb.message.edit_caption(f"✅ Approved and sent receipt total of ₹{final_session_amt} to user <code>{uid}</code>.")
@@ -208,10 +237,3 @@ async def admin_send_receipt_click(client: Client, cb: CallbackQuery):
     except Exception:
         pass
 
-@app.on_callback_query(filters.regex("^deny:"))
-async def admin_deny_click(client: Client, cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_TELEGRAM_ID:
-        return
-    _, claim_id = cb.data.split(":")
-    
-    with sqlite3.connect(DB_PATH) as conn:

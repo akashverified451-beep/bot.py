@@ -1,10 +1,14 @@
 import os
+import re
 import random
 import logging
 import io
-import sqlite3
+import asyncio
 from datetime import datetime
+import psycopg
+import qrcode
 from telethon import TelegramClient, events, Button
+from telethon.sessions import StringSession
 
 # Set up logging for Render dashboard monitoring
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -17,34 +21,43 @@ API_HASH = os.getenv("API_HASH", "27d91aac298b61038f19ee5c1b1f3f48")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 
-# Database Configuration
-DB_PATH = "production.db"
+# Database Connection Pool
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db")
 
-# Initialize Telethon Bot Client Instance
-bot = TelegramClient("sky_otp_bot_session_v2", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+# Dictionary to hold the monitoring client sessions
+active_clients = {}
+
+def get_db_connection():
+    """Establishes an isolated bridge line with the Render PostgreSQL engine."""
+    return psycopg.connect(DATABASE_URL)
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS users (uid INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0, join_date TEXT)")
-    cursor.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid INTEGER, txn TEXT, session_amt INTEGER DEFAULT 0)")
-    conn.commit()
-    conn.close()
-    logging.info("Fresh database tables created successfully.")
+    """Create required tables if they don't exist in PostgreSQL."""
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("CREATE TABLE IF NOT EXISTS users (uid BIGINT PRIMARY KEY, balance INT DEFAULT 0, join_date TEXT)")
+            cursor.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid BIGINT, txn TEXT, session_amt INT DEFAULT 0)")
+            cursor.execute("CREATE TABLE IF NOT EXISTS active_orders (phone_number TEXT, uid BIGINT, status TEXT)")
+            cursor.execute("CREATE TABLE IF NOT EXISTS available_accounts (phone_number TEXT, api_id TEXT, api_hash TEXT, string_session TEXT)")
+            conn.commit()
+    logging.info("PostgreSQL structural database tables checked/created successfully.")
 
 def get_user_bal(uid):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    row = cursor.execute("SELECT balance FROM users WHERE uid = ?", (uid,)).fetchone()
-    conn.close()
-    return row[0] if row else 0
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
+            row = cursor.fetchone()
+            return row[0] if row else 0
 
 def get_user_jd(uid):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    row = cursor.execute("SELECT join_date FROM users WHERE uid = ?", (uid,)).fetchone()
-    conn.close()
-    return row[0] if row else "N/A"
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT join_date FROM users WHERE uid = %s", (uid,))
+            row = cursor.fetchone()
+            return row[0] if row else "N/A"
+
+# Initialize Telethon Bot Client Instance (Clean Session to avoid locking)
+bot = TelegramClient("sky_otp_master_session", API_ID, API_HASH)
 
 # --- Keyboard Builders ---
 def main_kb():
@@ -70,14 +83,13 @@ async def global_message_handler(event):
     
     # Handle /start Command
     if text.startswith("/start"):
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        check_user = cursor.execute("SELECT uid FROM users WHERE uid = ?", (uid,)).fetchone()
-        if not check_user:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (?, 0, ?)", (uid, now))
-            conn.commit()
-        conn.close()
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
+                if not cursor.fetchone():
+                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (%s, 0, %s)", (uid, now))
+                    conn.commit()
         await event.respond("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", buttons=main_kb())
         return
 
@@ -102,15 +114,13 @@ async def global_message_handler(event):
 
     # Handle Add Funds Button
     elif text == "➕ Add Funds":
-        import qrcode
         txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
         claim_id = str(random.randint(1000, 9999))
         
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (?, ?, ?)", (claim_id, uid, txn))
-        conn.commit()
-        conn.close()
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
+                conn.commit()
         
         img = qrcode.make(f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR")
         buf = io.BytesIO()
@@ -129,18 +139,16 @@ async def global_message_handler(event):
         
     # Handle Screenshot Uploads
     elif event.photo:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        row = cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = ? ORDER BY claim_id DESC LIMIT 1", (uid,)).fetchone()
-        conn.close()
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = %s ORDER BY claim_id DESC LIMIT 1", (uid,))
+                row = cursor.fetchone()
             
         if not row:
             await event.respond("❌ You don't have any active deposit generation requests open. Please click '➕ Add Funds' first.")
             return
             
-        claim_id = row[0]
-        txn = row[1]
-        
+        claim_id, txn = row[0], row[1]
         await event.respond("⏳ <b>Screenshot Received!</b>\nYour proof has been sent to the admin for manual verification.", parse_mode='html')
         
         akb = [
@@ -164,24 +172,21 @@ async def admin_add_click(event):
     _, claim_id, add_amt = data_str.split(":")
     add_amt = int(add_amt)
     
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    row = cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = ?", (claim_id,)).fetchone()
-    
-    if not row:
-        conn.close()
-        await event.edit("❌ This claim has expired or was already closed.")
-        return
-        
-    uid = row[0]
-    txn = row[1]
-    session_amt = row[2]
-    new_session_amt = session_amt + add_amt
-    
-    cursor.execute("UPDATE claims SET session_amt = ? WHERE claim_id = ?", (new_session_amt, claim_id))
-    cursor.execute("UPDATE users SET balance = balance + ? WHERE uid = ?", (add_amt, uid))
-    conn.commit()
-    conn.close()
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = %s", (claim_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                await event.edit("❌ This claim has expired or was already closed.")
+                return
+                
+            uid, txn, session_amt = row[0], row[1], row[2]
+            new_session_amt = session_amt + add_amt
+            
+            cursor.execute("UPDATE claims SET session_amt = %s WHERE claim_id = %s", (new_session_amt, claim_id))
+            cursor.execute("UPDATE users SET balance = balance + %s WHERE uid = %s", (add_amt, uid))
+            conn.commit()
         
     await event.answer(f"Added +₹{add_amt}")
     
@@ -204,39 +209,12 @@ async def admin_send_receipt_click(event):
     data_str = event.data.decode('utf-8')
     _, claim_id = data_str.split(":")
     
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    row = cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = ?", (claim_id,)).fetchone()
-    
-    if not row:
-        conn.close()
-        await event.edit("❌ Already closed.")
-        return
-        
-    uid = row[0]
-    txn = row[1]
-    final_session_amt = row[2]
-    
-    cursor.execute("DELETE FROM claims WHERE claim_id = ?", (claim_id,))
-    conn.commit()
-    conn.close()
-        
-    current_bal = get_user_bal(uid)
-    await event.edit(f"✅ Approved and sent receipt total of ₹{final_session_amt} to user <code>{uid}</code>.", parse_mode='html')
-    
-    rcpt = f"✅ <b>Payment Confirmed!</b>\n\n<b>Transaction ID:</b> <code>{txn}</code>\n<b>Amount Added:</b> ₹{final_session_amt}\n<b>Current Total Balance:</b> ₹{current_bal}\n\nThank you for choosing SKY OTP!"
-    try:
-        await bot.send_message(entity=uid, message=rcpt, parse_mode='html')
-    except Exception:
-        pass
-
-@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"deny:")))
-async def admin_deny_click(event):
-    if event.sender_id != ADMIN_TELEGRAM_ID:
-        return
-        
-    data_str = event.data.decode('utf-8')
-    _, claim_id = data_str.split(":")
-    
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = %s", (claim_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                await event.edit("❌ Already closed.")
+                return
+                

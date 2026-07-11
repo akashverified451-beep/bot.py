@@ -11,8 +11,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 # Load secure configuration states
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAGN9YLH9ykLKDtvewuJydI3efFkW5grAQo")
-API_ID = int(os.getenv("API_ID", "35742827")) 
-API_HASH = os.getenv("API_HASH", "f2955d75aa8ace7c421a2bb6152c5dd3")
+API_ID = int(os.getenv("API_ID", "33033843")) 
+API_HASH = os.getenv("API_HASH", "27d91aac298b61038f19ee5c1b1f3f48")
 
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"

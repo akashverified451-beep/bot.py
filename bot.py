@@ -2,7 +2,6 @@ import sys
 import asyncio
 
 # --- Python 3.12+ / 3.14 Pyrogram Lifecycle Hotfix ---
-# This forces Pyrogram to respect the modern asyncio event loop policy
 try:
     asyncio.get_event_loop()
 except RuntimeError:
@@ -33,11 +32,10 @@ ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
 
-# Initialize Pyrogram Bot Client Instance
+# Initialize Pyrogram Bot Client Instance (Removed invalid inline_workers argument)
 app = Client(
     "sky_otp_bot",
-    bot_token=BOT_TOKEN,
-    inline_workers=16  # Allocates dedicated concurrent tasks for rapid button processing
+    bot_token=BOT_TOKEN
 )
 
 def init_db():
@@ -214,3 +212,6 @@ async def admin_send_receipt_click(client: Client, cb: CallbackQuery):
 async def admin_deny_click(client: Client, cb: CallbackQuery):
     if cb.from_user.id != ADMIN_TELEGRAM_ID:
         return
+    _, claim_id = cb.data.split(":")
+    
+    with sqlite3.connect(DB_PATH) as conn:

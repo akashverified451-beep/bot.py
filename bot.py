@@ -446,15 +446,35 @@ async def callback_handler(event):
                     await event.respond("❌ **Out of Stock!** This batch has just sold out.")
                     return
                 
-                phone_number, api_id, api_hash, string_session = account_row
+                       phone_number, api_id, api_hash, string_session = account_row
                 
-                # Deduct money securely
+                # Deduct balance and clear from public stock list
                 await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (price, uid))
-                # Delete item from available stock so nobody else can buy it
                 await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_number,))
+                
+                # Safe Database Log Method (Bypasses Telegram's 64-character limit)
+                session_backup_data = f"{api_id}|{api_hash}|{string_session}"
+                await cursor.execute(
+                    "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
+                    (phone_number, uid, session_backup_data)
+                )
                 await conn.commit()
 
-        # Build reservation message layout without the static slow text
+        # Build clean layout framework to send to user
+        delivery_message = (
+            "🇮🇳 India       ₹41.0       ✅\n\n"
+            f"📞 **Phone Number:** `{phone_number}`\n"
+            "📩 **OTP:** `⏳ NO LIVE SMS FOUND YET`\n\n"
+            "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
+        )
+        
+        # Safe button passing only the phone number (Under 64 characters)
+        retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=f"checkotp:{phone_number}")]]
+        await event.respond(delivery_message, buttons=retry_btn_kb)
+        return
+         
+
+      # Build reservation message layout without the static slow text
         delivery_message = (
             "🇮🇳 India       ₹41.0       ✅\n\n"
             f"📞 **Phone Number:** `{phone_number}`\n"

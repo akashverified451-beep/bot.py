@@ -147,84 +147,65 @@ async def country_select_click(event):
         [Button.inline("❌ Cancel Purchase", data="main_menu_back")]
     ]
     
-    confirm_text = (
-        f"🛒 <b>Purchase Order Summary</b>\n\n"
-        f"🌏 <b>Country Selected:</b> {country}\n"
-        f"💰 <b>Price per Account:</b> ₹{price}\n\n"
-        f"Would you like to complete this order reservation?"
-    )
-    await event.edit(confirm_text, buttons=confirm_kb, parse_mode='html')
-
-
-@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"confbuy:")))
-async def confirm_purchase_click(event):
-    await event.answer()
+# --- Force Command & Interaction Handlers ---
+@bot.on(events.NewMessage)
+async def global_message_handler(event):
+    if not event.is_private:
+        return
+        
     uid = event.sender_id
-    data_str = event.data.decode('utf-8')
-    _, country, price_str = data_str.split(":")
-    item_price = float(price_str)
+    text = event.text or ""
     
-    # 1. Fetch user's current balance
-    async with await get_db_connection() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
-            row = await cursor.fetchone()
-            user_balance = row[0] if row else 0
-            
-            # 2. Check if the user has enough money
-            if user_balance < item_price:
-                fail_text = (
-                    f"❌ <b>Insufficient Balance</b>\n\n"
-                    f"Your wallet balance (₹{user_balance}) is too low for this purchase (₹{item_price}).\n"
-                    f"Please navigate to your Wallet menu option to deposit funds."
-                )
-                await event.edit(fail_text, buttons=[[Button.inline("🔙 Back", data="main_menu_back")]], parse_mode='html')
-                return
-                
-            # 3. Deduct balance from user profile account
-            new_balance = user_balance - item_price
-            await cursor.execute("UPDATE users SET balance = %s WHERE uid = %s", (new_balance, uid))
-            await conn.commit()
-            
-    # Mock generation data parameters (Replace this placeholder hook with your API delivery mechanism later)
-    generated_phone = f"+91 {random.randint(60000, 99999)} {random.randint(10000, 99999)}"
+    # 1. Handle /start Command
+    if text.startswith("/start"):
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
+                if not await cursor.fetchone():
+                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    await cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (%s, 0, %s)", (uid, now))
+                    await conn.commit()
+        await event.respond("👋 Hello! Welcome to SKY OTP Bot.\n\n✨ Use the buttons below to explore our services.", buttons=main_kb())
+        return
+
+    # 2. Handle Wallet Button
+    elif text == "💼 Wallet":
+        bal = await get_user_bal(uid)
+        await event.respond(f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", buttons=balance_kb(), parse_mode='html')
+        return
     
-    success_text = (
-        f"✅ <b>Number reserved successfully</b>\n\n"
-        f"📞 <b>Phone:</b> <code>{generated_phone}</code>\n"
-        f"🌏 <b>Country:</b> {country}\n"
-        f"💰 <b>Price:</b> ₹{item_price}\n\n"
-        f"🌟 <b>Note:</b> Number cannot be cancelled because OTP Delivery is guaranteed!"
-    )
+    # 3. Handle Profile Button
+    elif text == "👤 User Profile":
+        bal = await get_user_bal(uid)
+        jd = await get_user_jd(uid)
+        await event.respond(f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{bal}\n📅 <b>Join Date:</b> {jd}", parse_mode='html')
+        return
     
-    success_kb = [[Button.inline("📩 Check OTP", data="chk_otp")]]
-    await event.edit(success_text, buttons=success_kb, parse_mode='html')
-
-@bot.on(events.CallbackQuery(data=b"main_menu_back"))
-async def main_menu_fallback_click(event):
-    await event.answer()
-    await event.edit("🏠 Returning you to the service index panel. Please use your standard bottom text menu buttons to navigate further.")
-
-@bot.on(events.CallbackQuery(data=b"chk_otp"))
-async def check_otp_click(event):
-    # Temporary placeholder alert for the OTP button click
-    await event.answer("⏳ Waiting for network code submission... Refreshing network buffer status.", alert=True)
-
-
-@bot.on(events.CallbackQuery(data=b"lbl"))
-async def label_click_absorber(event):
-    # Stops any processing actions if a user clicks a table column header
-    await event.answer()
-
-        # Handle Buy Buttons
+    # 4. Handle Back Button
+    elif text == "🔙 Back to Main Menu":
+        await event.respond("👋 Hello! Welcome to SKY OTP Bot.\n\n✨ Use the buttons below to explore our services.", buttons=main_kb())
+        return
+        
+    # 5. Handle Buy Telegram Account Button
     elif text == "🛍️ Buy Telegram Account":
-        await event.respond("🔄 <b>Live Telegram OTP Activation Enabled</b>\n\nPlease request your code from your app now.", parse_mode='html')
+        tg_services_kb = [
+            [Button.inline("🌍 Country", data="lbl"), Button.inline("💰 Price", data="lbl"), Button.inline("📦 Stock", data="lbl")],
+            [Button.inline("🇨🇴 Colombia", data="buy:Colombia:36.23"), Button.inline("₹36.23", data="buy:Colombia:36.23"), Button.inline(" ✅", data="buy:Colombia:36.23")],
+            [Button.inline("🇳🇬 Nigeria", data="buy:Nigeria:36.23"), Button.inline("₹36.23", data="buy:Nigeria:36.23"), Button.inline(" ✅", data="buy:Nigeria:36.23")],
+            [Button.inline("🇧🇩 Bangladesh", data="buy:Bangladesh:40.04"), Button.inline("₹40.04", data="buy:Bangladesh:40.04"), Button.inline(" ✅", data="buy:Bangladesh:40.04")],
+            [Button.inline("🇨🇦 Canada", data="buy:Canada:40.04"), Button.inline("₹40.04", data="buy:Canada:40.04"), Button.inline(" ✅", data="buy:Canada:40.04")],
+            [Button.inline("🇺🇸 United States", data="buy:USA:41.00"), Button.inline("₹41.00", data="buy:USA:41.00"), Button.inline(" ✅", data="buy:USA:41.00")],
+            [Button.inline("🇮🇳 India", data="buy:India:41.00"), Button.inline("₹41.00", data="buy:India:41.00"), Button.inline(" ✅", data="buy:India:41.00")]
+        ]
+        await event.respond("📊 <b>Available Telegram Services</b>", buttons=tg_services_kb, parse_mode='html')
+        return
 
+    # 6. Handle Buy Whatsapp OTP Button
     elif text == "🗨️ Buy Whatsapp OTP":
         await event.respond("🔄 <b>Live WhatsApp OTP Activation Enabled</b>\n\nPlease request your verification code now.", parse_mode='html')
+        return
 
-    
-  # ✅ UPDATED: Clean English layout with clickable Instagram Link
+    # 7. Handle Promocode Button
     elif text == "🎁 Promocode":
         promo_msg = (
             "<b>Follow me on Instagram to get exclusive promo codes:</b>\n\n"
@@ -232,8 +213,9 @@ async def label_click_absorber(event):
             "<a href='https://instagram.com'>@akash.verified</a>"
         )
         await event.respond(promo_msg, parse_mode='html', link_preview=False)
+        return
 
-    # ✅ ADDED: Professional English formatting for the Support button handler
+    # 8. Handle Support Button
     elif text == "🆘 Support":
         support_msg = (
             "✈️ <b>To contact our official support team, please reach out via the details below:</b>\n\n"
@@ -241,9 +223,9 @@ async def label_click_absorber(event):
             "⏰ <b>Working Hours:</b> 10:00 AM to 10:00 PM"
         )
         await event.respond(support_msg, parse_mode='html')
+        return
 
-    
-    # Handle Add Funds Button
+    # 9. Handle Add Funds Button
     elif text == "➕ Add Funds":
         txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
         claim_id = str(random.randint(1000, 9999))
@@ -259,8 +241,7 @@ async def label_click_absorber(event):
         buf.seek(0)
         buf.name = "qr.png" 
         
-        # ✅ UPDATED: Message formatting updated as requested
-        cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay.\n\n⚠️ After making the payment, simply upload your Payment Screenshot for verification the payment.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
+        cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay.\n\n⚠️ : After making the payment, simply upload your Payment Screenshot for verification the payment.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
         
         await event.respond(
             cap,
@@ -268,8 +249,9 @@ async def label_click_absorber(event):
             buttons=[[Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]],
             parse_mode='html'
         )
-    
-    # Handle Screenshot Uploads
+        return
+        
+    # 10. Handle Screenshot Uploads
     elif event.photo:
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
@@ -293,7 +275,8 @@ async def label_click_absorber(event):
         
         admin_text = f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0"
         await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
-
+        return
+    
 # --- Admin Callback Button Processors ---
 @bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"add:")))
 async def admin_add_click(event):

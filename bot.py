@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 # Load secure configuration states 
 # IMPORTANT: Revoke your current Bot Token via @BotFather and set these inside Render Settings!
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAGN9YLH9ykLKDtvewuJydI3efFkW5grAQo")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAGSEER5HzYb69RK5zOlgR9KDmQArRR54VU")
 API_ID = int(os.getenv("API_ID", "33033843")) 
 API_HASH = os.getenv("API_HASH", "27d91aac298b61038f19ee5c1b1f3f48")
 

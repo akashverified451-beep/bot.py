@@ -4,30 +4,24 @@ import logging
 import io
 import sqlite3
 from datetime import datetime
-from pyrogram import Client, filters
-from pyrogram.types import (
-    Message, 
-    ReplyKeyboardMarkup, 
-    KeyboardButton, 
-    InlineKeyboardMarkup, 
-    InlineKeyboardButton, 
-    CallbackQuery
-)
+from telethon import TelegramClient, events, Button
 
 # Set up logging for Render dashboard monitoring
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Load secure configuration states
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
+# Telethon requires an API_ID and API_HASH along with the Bot Token. 
+# Using default safe values, but you can change these via Render Environment Variables if needed.
+API_ID = int(os.getenv("API_ID", "2040")) 
+API_HASH = os.getenv("API_HASH", "b1d54e54de9f6a79cd1e4303142a78b4")
+
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 DB_PATH = os.getenv("DATABASE_PATH", "bot.db")
 
-# Initialize Pyrogram Bot Client Instance
-app = Client(
-    "sky_otp_bot",
-    bot_token=BOT_TOKEN
-)
+# Initialize Telethon Bot Client Instance
+bot = TelegramClient("sky_otp_bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 def init_db():
     db_dir = os.path.dirname(DB_PATH)
@@ -56,22 +50,23 @@ def get_user_jd(uid):
 
 # --- Keyboard Builders ---
 def main_kb():
-    return ReplyKeyboardMarkup([
-        [KeyboardButton("🛍️ Buy Telegram Account")],
-        [KeyboardButton("🗨️ Buy Whatsapp OTP")],
-        [KeyboardButton("💼 Wallet"), KeyboardButton("👤 User Profile")]
-    ], resize_keyboard=True)
+    return [
+        [Button.text("🛍️ Buy Telegram Account", resize=True), Button.text("🗨️ Buy Whatsapp OTP", resize=True)],
+        [Button.text("💼 Wallet", resize=True), Button.text("👤 User Profile", resize=True)]
+    ]
 
 def balance_kb():
-    return ReplyKeyboardMarkup([
-        [KeyboardButton("➕ Add Funds")],
-        [KeyboardButton("🔙 Back to Main Menu")]
-    ], resize_keyboard=True)
+    return [
+        [Button.text("➕ Add Funds", resize=True)],
+        [Button.text("🔙 Back to Main Menu", resize=True)]
+    ]
 
 # --- Command & Interaction Handlers ---
-@app.on_message(filters.command("start"))
-async def cmd_start(client: Client, msg: Message):
-    uid = msg.from_user.id
+@bot.on(events.NewMessage(pattern="/start"))
+async def cmd_start(event):
+    if not event.is_private:
+        return
+    uid = event.sender_id
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     check_user = cursor.execute("SELECT uid FROM users WHERE uid = ?", (uid,)).fetchone()
@@ -80,27 +75,27 @@ async def cmd_start(client: Client, msg: Message):
         cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (?, 0, ?)", (uid, now))
         conn.commit()
     conn.close()
-    await msg.reply_text("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", reply_markup=main_kb())
+    await event.respond("👋 Welcome to SKY OTP BOT.\n✨ Use the menu panels below to navigate our services.", buttons=main_kb())
 
-@app.on_message(filters.text & filters.private)
-async def text_menu_routing(client: Client, msg: Message):
-    uid = msg.from_user.id
-    text = msg.text
+@bot.on(events.NewMessage(func=lambda e: e.is_private and e.text))
+async def text_menu_routing(event):
+    uid = event.sender_id
+    text = event.text
 
     if text == "💼 Wallet":
         bal = get_user_bal(uid)
-        await msg.reply_text(f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", reply_markup=balance_kb())
+        await event.respond(f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", buttons=balance_kb(), parse_mode='html')
     
     elif text == "👤 User Profile":
         bal = get_user_bal(uid)
         jd = get_user_jd(uid)
-        await msg.reply_text(f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{bal}\n📅 <b>Join Date:</b> {jd}")
+        await event.respond(f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{bal}\n📅 <b>Join Date:</b> {jd}", parse_mode='html')
     
     elif text == "🔙 Back to Main Menu":
-        await msg.reply_text("👋 Welcome to SKY OTP BOT.", reply_markup=main_kb())
+        await event.respond("👋 Welcome to SKY OTP BOT.", buttons=main_kb())
         
     elif text == "🛍️ Buy Telegram Account":
-        await msg.reply_text("🔄 <b>Live Telegram OTP Activation Enabled</b>\n\nPlease request your code from your app now.")
+        await event.respond("🔄 <b>Live Telegram OTP Activation Enabled</b>\n\nPlease request your code from your app now.", parse_mode='html')
 
     elif text == "➕ Add Funds":
         import qrcode
@@ -121,16 +116,17 @@ async def text_menu_routing(client: Client, msg: Message):
         
         cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay.\n\n⚠️ <b>CRITICAL STEP:</b> After making the payment, simply upload your <b>Payment Screenshot</b> straight into this chat window to notify the admin.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
         
-        await msg.reply_photo(
-            photo=buf, 
-            caption=cap, 
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]])
+        await event.respond(
+            cap,
+            file=buf,
+            buttons=[[Button.inline("❌ Cancel", data="cancel")]],
+            parse_mode='html'
         )
 
 # Catch client payment receipt uploads statelessly
-@app.on_message(filters.photo & filters.private)
-async def process_stateless_screenshot(client: Client, msg: Message):
-    uid = msg.from_user.id
+@bot.on(events.NewMessage(func=lambda e: e.is_private and e.photo))
+async def process_stateless_screenshot(event):
+    uid = event.sender_id
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -138,32 +134,33 @@ async def process_stateless_screenshot(client: Client, msg: Message):
     conn.close()
         
     if not row:
-        await msg.reply_text("❌ You don't have any active deposit generation requests open. Please click '➕ Add Funds' first.")
+        await event.respond("❌ You don't have any active deposit generation requests open. Please click '➕ Add Funds' first.")
         return
         
     claim_id = row[0]
     txn = row[1]
-    photo_file_id = msg.photo.file_id
     
-    await msg.reply_text("⏳ <b>Screenshot Received!</b>\nYour proof has been sent to the admin for manual verification.")
+    await event.respond("⏳ <b>Screenshot Received!</b>\nYour proof has been sent to the admin for manual verification.", parse_mode='html')
     
-    akb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ ₹1", callback_data=f"add:{claim_id}:1"), InlineKeyboardButton("➕ ₹5", callback_data=f"add:{claim_id}:5")],
-        [InlineKeyboardButton("➕ ₹10", callback_data=f"add:{claim_id}:10"), InlineKeyboardButton("➕ ₹50", callback_data=f"add:{claim_id}:50")],
-        [InlineKeyboardButton("➕ ₹100", callback_data=f"add:{claim_id}:100"), InlineKeyboardButton("➕ ₹500", callback_data=f"add:{claim_id}:500")],
-        [InlineKeyboardButton("📩 Confirm & Send", callback_data=f"send:{claim_id}")],
-        [InlineKeyboardButton("❌ Decline Request", callback_data=f"deny:{claim_id}")]
-    ])
+    akb = [
+        [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
+        [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
+        [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
+        [Button.inline("📩 Confirm & Send", data=f"send:{claim_id}")],
+        [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
+    ]
     
     admin_text = f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0"
-    await client.send_photo(chat_id=ADMIN_TELEGRAM_ID, photo=photo_file_id, caption=admin_text, reply_markup=akb)
+    await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
 
 # --- Admin Interactivity Callback Query Processors ---
-@app.on_callback_query(filters.regex("^add:"))
-async def admin_add_click(client: Client, cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_TELEGRAM_ID:
+@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"add:")))
+async def admin_add_click(event):
+    if event.sender_id != ADMIN_TELEGRAM_ID:
         return
-    _, claim_id, add_amt = cb.data.split(":")
+    
+    data_str = event.data.decode('utf-8')
+    _, claim_id, add_amt = data_str.split(":")
     add_amt = int(add_amt)
     
     conn = sqlite3.connect(DB_PATH)
@@ -172,7 +169,7 @@ async def admin_add_click(client: Client, cb: CallbackQuery):
     
     if not row:
         conn.close()
-        await cb.message.edit_caption("❌ This claim has expired or was already closed.")
+        await event.edit("❌ This claim has expired or was already closed.")
         return
         
     uid = row[0]
@@ -185,22 +182,26 @@ async def admin_add_click(client: Client, cb: CallbackQuery):
     conn.commit()
     conn.close()
         
-    await cb.answer(f"Added +₹{add_amt}")
+    await event.answer(f"Added +₹{add_amt}")
     
-    akb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ ₹1", callback_data=f"add:{claim_id}:1"), InlineKeyboardButton("➕ ₹5", callback_data=f"add:{claim_id}:5")],
-        [InlineKeyboardButton("➕ ₹10", callback_data=f"add:{claim_id}:10"), InlineKeyboardButton("➕ ₹50", callback_data=f"add:{claim_id}:50")],
-        [InlineKeyboardButton("➕ ₹100", callback_data=f"add:{claim_id}:100"), InlineKeyboardButton("➕ ₹500", callback_data=f"add:{claim_id}:500")],
-        [InlineKeyboardButton(f"📩 Confirm & Send ₹{new_session_amt}", callback_data=f"send:{claim_id}")],
-        [InlineKeyboardButton("❌ Decline Request", callback_data=f"deny:{claim_id}")]
-    ])
-    await cb.message.edit_caption(f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{new_session_amt}", reply_markup=akb)
+    akb = [
+        [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
+        [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
+        [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
+        [Button.inline(f"📩 Confirm & Send ₹{new_session_amt}", data=f"send:{claim_id}")],
+        [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
+    ]
+    
+    updated_text = f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{new_session_amt}"
+    await event.edit(updated_text, buttons=akb, parse_mode='html')
 
-@app.on_callback_query(filters.regex("^send:"))
-async def admin_send_receipt_click(client: Client, cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_TELEGRAM_ID:
+@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"send:")))
+async def admin_send_receipt_click(event):
+    if event.sender_id != ADMIN_TELEGRAM_ID:
         return
-    _, claim_id = cb.data.split(":")
+        
+    data_str = event.data.decode('utf-8')
+    _, claim_id = data_str.split(":")
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -208,7 +209,7 @@ async def admin_send_receipt_click(client: Client, cb: CallbackQuery):
     
     if not row:
         conn.close()
-        await cb.message.edit_caption("❌ Already closed.")
+        await event.edit("❌ Already closed.")
         return
         
     uid = row[0]
@@ -220,17 +221,16 @@ async def admin_send_receipt_click(client: Client, cb: CallbackQuery):
     conn.close()
         
     current_bal = get_user_bal(uid)
-    await cb.message.edit_caption(f"✅ Approved and sent receipt total of ₹{final_session_amt} to user <code>{uid}</code>.")
+    await event.edit(f"✅ Approved and sent receipt total of ₹{final_session_amt} to user <code>{uid}</code>.", parse_mode='html')
     
     rcpt = f"✅ <b>Payment Confirmed!</b>\n\n<b>Transaction ID:</b> <code>{txn}</code>\n<b>Amount Added:</b> ₹{final_session_amt}\n<b>Current Total Balance:</b> ₹{current_bal}\n\nThank you for choosing SKY OTP!"
     try:
-        await client.send_message(chat_id=uid, text=rcpt)
+        await bot.send_message(entity=uid, message=rcpt, parse_mode='html')
     except Exception:
         pass
 
-@app.on_callback_query(filters.regex("^deny:"))
-async def admin_deny_click(client: Client, cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_TELEGRAM_ID:
+@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"deny:")))
+async def admin_deny_click(event):
+    if event.sender_id != ADMIN_TELEGRAM_ID:
         return
-    _, claim_id = cb.data.split(":")
-    
+        

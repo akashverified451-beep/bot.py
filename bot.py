@@ -531,27 +531,44 @@ async def callback_handler(event):
         # Fallback text if the session data isn't fully linked yet
         fetched_otp = "NO LIVE SMS FOUND YET"
 
-        # 2. Connect live to the customer's reserved number using Telethon
+     # 2. Connect live to the account session string instantly
         if session_str_val:
             try:
                 from telethon.sessions import StringSession
-                # Start a temporary client session inside your bot backend to check the inbox
-                temp_client = TelegramClient(StringSession(session_str_val), int(api_id_val), api_hash_val)
-                await temp_client.connect()
+                
+                # Build an isolated memory client with minimum retries for speed
+                temp_client = TelegramClient(
+                    StringSession(session_str_val), 
+                    int(api_id_val), 
+                    api_hash_val,
+                    connection_retries=1,
+                    retry_delay=1
+                )
+                
+                # Connect with a strict 4-second timeout limit to guarantee speed
+                await asyncio.wait_for(temp_client.connect(), timeout=4.0)
                 
                 if await temp_client.is_user_authorized():
-                    # Read the last 5 messages from Telegram official notification service
-                    async for msg in temp_client.iter_messages(777000, limit=5):
+                    # Target ONLY the official Telegram notification entity (777000) for speed
+                    async for msg in temp_client.iter_messages(777000, limit=1):
                         if msg.text:
-                            # Use regular expressions to extract a 5-digit or 6-digit login pin code
-                            match = re.search(r'\b\d{5,6}\b', msg.text)
-                            if match:
-                                fetched_otp = match.group(0)
-                                break
-                await temp_client.disconnect()
+                            # Look for 5 or 6 digit codes instantly using regex
+                            otp_match = re.search(r'\b\d{5,6}\b', msg.text)
+                            if otp_match:
+                                fetched_otp = otp_match.group(0)
+                            else:
+                                fetched_otp = msg.text[:40] # fallback to raw message snippet
+                else:
+                    fetched_otp = "❌ SESSION EXPIRED / REVOKED"
+                    
             except Exception as e:
-                logging.error(f"Failed to read session inbox: {e}")
-                fetched_otp = "SESSION EXPIRED / ERROR"
+                logging.error(f"Instant OTP Fetch Failure: {e}")
+                fetched_otp = "⏳ NO LIVE SMS FOUND YET"
+                
+            finally:
+                # Clean up network sockets immediately
+                if 'temp_client' in locals() and temp_client.is_connected():
+                    await temp_client.disconnect()
 
         # Update the UI layout to display the real, live code found
         custom_otp_message = (

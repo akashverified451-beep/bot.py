@@ -11,13 +11,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 # Load secure configuration states
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAGN9YLH9ykLKDtvewuJydI3efFkW5grAQo")
-API_ID = int(os.getenv("API_ID", "2040")) 
-API_HASH = os.getenv("API_HASH", "b1d54e54de9f6a79cd1e4303142a78b4")
+API_ID = int(os.getenv("API_ID", "35742827")) 
+API_HASH = os.getenv("API_HASH", "f2955d75aa8ace7c421a2bb6152c5dd3")
 
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 
-# CHANGED: Using a fresh database name to clear corruption locks completely
+# Database Configuration
 DB_PATH = "production.db"
 
 # Initialize Telethon Bot Client Instance

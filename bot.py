@@ -198,4 +198,4 @@ async def admin_add_click(cb: CallbackQuery):
 # FIXED: Extracted claim_id cleanly using index [1]
 @dp.callback_query(F.data.startswith("send:"))
 async def admin_send_receipt_click(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_TELEGRAM_ID:
+    if cb.from_user.id != 8393210427:

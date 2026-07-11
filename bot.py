@@ -133,38 +133,66 @@ async def global_message_handler(event):
         await event.respond("👋 Hello! Welcome to SKY OTP Bot.\n\n✨ Use the buttons below to explore our services.", buttons=main_kb())
         event.handled = True
         return
-        
-    # 5. Handle Buy Telegram Account Button (Pulls Real Database Numbers)
+
+    
+   # 5. Handle Buy Telegram Account Button (Fully Dynamic Auto-Country Listing)
     elif text == "🛍️ Buy Telegram Account":
+        # Global country layout configuration profile setup maps
+        country_meta = {
+            "Colombia": {"flag": "🇨🇴", "price": 36.23},
+            "Nigeria": {"flag": "🇳🇬", "price": 36.23},
+            "Bangladesh": {"flag": "🇧🇩", "price": 40.04},
+            "Canada": {"flag": "🇨🇦", "price": 40.04},
+            "USA": {"flag": "🇺🇸", "price": 41.00},
+            "India": {"flag": "🇮🇳", "price": 41.00},
+            "Japan": {"flag": "🇯🇵", "price": 45.00},    # Add new entries here easily
+            "Nepal": {"flag": "🇳🇵", "price": 35.00}     # Set custom pricing rules
+        }
+
+        # Query database to aggregate counts grouped dynamically by target prefix keys
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute("SELECT COUNT(*) FROM available_accounts WHERE phone_number LIKE '+57%'")
-                stock_colombia = (await cursor.fetchone())[0]
+                # Scans all active sessions inside stock inventory tables
+                await cursor.execute("SELECT phone_number FROM available_accounts")
+                all_numbers = await cursor.fetchall()
 
-                await cursor.execute("SELECT COUNT(*) FROM available_accounts WHERE phone_number LIKE '+234%'")
-                stock_nigeria = (await cursor.fetchone())[0]
+        # Compile totals dynamically based on matching country string conditions
+        stock_counts = {country: 0 for country in country_meta}
+        for (phone,) in all_numbers:
+            if phone.startswith("+57"): stock_counts["Colombia"] += 1
+            elif phone.startswith("+234"): stock_counts["Nigeria"] += 1
+            elif phone.startswith("+880"): stock_counts["Bangladesh"] += 1
+            elif phone.startswith("+1"): 
+                # Differentiate between USA and Canada if necessary, or group them together
+                stock_counts["USA"] += 1 
+            elif phone.startswith("+91"): stock_counts["India"] += 1
+            elif phone.startswith("+81"): stock_counts["Japan"] += 1
+            elif phone.startswith("+977"): stock_counts["Nepal"] += 1
 
-                await cursor.execute("SELECT COUNT(*) FROM available_accounts WHERE phone_number LIKE '+880%'")
-                stock_bangladesh = (await cursor.fetchone())[0]
-
-                await cursor.execute("SELECT COUNT(*) FROM available_accounts WHERE phone_number LIKE '+1%'")
-                stock_usa_canada = (await cursor.fetchone())[0]
-
-                await cursor.execute("SELECT COUNT(*) FROM available_accounts WHERE phone_number LIKE '+91%'")
-                stock_india = (await cursor.fetchone())[0]
-
+        # Initialise standard presentation row layout components headers
         tg_services_kb = [
-            [Button.inline("🌍 Country", data="lbl"), Button.inline("💰 Price", data="lbl"), Button.inline("📦 Stock", data="lbl")],
-            [Button.inline("🇨🇴 Colombia", data="buy:Colombia:36.23"), Button.inline("₹36.23", data="buy:Colombia:36.23"), Button.inline(f"📝 {stock_colombia}", data="buy:Colombia:36.23")],
-            [Button.inline("🇳🇬 Nigeria", data="buy:Nigeria:36.23"), Button.inline("₹36.23", data="buy:Nigeria:36.23"), Button.inline(f"📝 {stock_nigeria}", data="buy:Nigeria:36.23")],
-            [Button.inline("🇧🇩 Bangladesh", data="buy:Bangladesh:40.04"), Button.inline("₹40.04", data="buy:Bangladesh:40.04"), Button.inline(f"📝 {stock_bangladesh}", data="buy:Bangladesh:40.04")],
-            [Button.inline("🇨🇦 Canada", data="buy:Canada:40.04"), Button.inline("₹40.04", data="buy:Canada:40.04"), Button.inline(f"📝 {stock_usa_canada}", data="buy:Canada:40.04")],
-            [Button.inline("🇺🇸 United States", data="buy:USA:41.00"), Button.inline("₹41.00", data="buy:USA:41.00"), Button.inline(f"📝 {stock_usa_canada}", data="buy:USA:41.00")],
-            [Button.inline("🇮🇳 India", data="buy:India:41.00"), Button.inline("₹41.00", data="buy:India:41.00"), Button.inline(f"📝 {stock_india}", data="buy:India:41.00")]
+            [Button.inline("🌍 Country", data="lbl"), Button.inline("💰 Price", data="lbl"), Button.inline("📦 Stock", data="lbl")]
         ]
+
+        # Dynamically append interactive checkout buttons only if inventory contains active items
+        for country, info in country_meta.items():
+            stock_qty = stock_counts.get(country, 0)
+            flag = info["flag"]
+            price_val = info["price"]
+            
+            # Format custom target data payload tracking string parameters signatures
+            btn_callback = f"buy:{country}:{price_val}"
+            
+            tg_services_kb.append([
+                Button.inline(f"{flag} {country}", data=btn_callback),
+                Button.inline(f"₹{price_val}", data=btn_callback),
+                Button.inline(f"📝 {stock_qty}", data=btn_callback)
+            ])
+
         await event.respond("📊 <b>Available Telegram Services</b>", buttons=tg_services_kb, parse_mode='html')
         event.handled = True
         return
+
 
     # 6. Handle Buy Whatsapp OTP Button
     elif text == "🗨️ Buy Whatsapp OTP":

@@ -232,24 +232,22 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-# --- ADD THIS LOGIC TO ENABLE CALLBACK QUERIES ---
+# --- Updated Callback Handler with Dynamic Check OTP Button ---
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
     data = event.data.decode('utf-8')
     uid = event.sender_id
 
-    # 1. ALWAYS answer immediately to stop the loading spinner/timeout error
     if data == "lbl":
-        await event.answer("This is a table column label.", alert=False)
+        await event.answer()
         return
-    else:
-        # Acknowledge all other clicks instantly so the error goes away
-        await event.answer("Processing request...", alert=False)
 
-    # 2. Process purchase sequence
+    # 1. First Step: User clicks a country button to reserve a number
     if data.startswith("buy:"):
         _, country, price_str = data.split(":")
         price = float(price_str)
+
+        await event.answer("Reserving number...", alert=False)
 
         country_prefixes = {
             "Colombia": "+57%", "Nigeria": "+234%", "Bangladesh": "+880%",
@@ -281,7 +279,7 @@ async def callback_handler(event):
 
                 phone_number, api_id, api_hash, string_session = account_row
 
-                # Atomically apply balance deduction and clear item from database stock
+                # Deduct balance and clear item from stock
                 await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (int(price), uid))
                 await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_number,))
                 await cursor.execute(
@@ -290,25 +288,45 @@ async def callback_handler(event):
                 )
                 await conn.commit()
 
-        # Securely deliver credentials package to user
+        # Build clean reservation message layout with the visual emoji text flags
+        country_flags = {"Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦", "USA": "🇺🇸", "India": "🇮🇳"}
+        flag = country_flags.get(country, "🌍")
+
         delivery_message = (
-            "🎉 **Purchase Successful!**\n\n"
-            f"🌍 **Country:** {country}\n"
-            f"💰 **Debited Amount:** ₹{price}\n"
-            f"📱 **Phone Number:** `{phone_number}`\n\n"
-            "📋 **Your Session Credentials:**\n"
-            f"• **API ID:** `{api_id}`\n"
-            f"• **API HASH:** `{api_hash}`\n\n"
-            "🔑 **String Session Token:**\n"
-            f"<code>{string_session}</code>"
+            "✅ **Number reserved successfully**\n\n"
+            f"📞 **Phone:** `{phone_number}`\n"
+            f"🌏 **Country:** {country} {flag}\n"
+            f"💰 **Price:** ₹{price}\n\n"
+            "🌟 **Note:** Number cannot be cancelled because OTP Delivery is guaranteed!"
         )
-        await event.respond(delivery_message, parse_mode='html')
+
+        # Attach the 📩 Check OTP button containing the reserved phone number inside its data payload signature
+        otp_btn_kb = [[Button.inline("📩 Check OTP", data=f"checkotp:{phone_number}")]]
+        await event.respond(delivery_message, buttons=otp_btn_kb)
+        return
+
+    # 2. Second Step: User clicks the "📩 Check OTP" inline button
+    elif data.startswith("checkotp:"):
+        _, target_phone = data.split(":")
         
-        # Notify Admin
-        try:
-            await bot.send_message(ADMIN_TELEGRAM_ID, f"💰 **Sale!** User `{uid}` bought **{country}** (`{phone_number}`).")
-        except Exception:
-            pass
+        # Acknowledge click immediately to prevent the loading spinner timeout error
+        await event.answer("Checking system gateway for codes...", alert=False)
+
+        # Placeholder logic: Shows waiting status until SMS API connects
+        fetched_otp = "WAITING FOR SMS" 
+
+        custom_otp_message = (
+            f"📞 **Phone Number:** `{target_phone}`\n\n"
+            f"📩 **OTP:** `{fetched_otp}`\n\n"
+            "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
+        )
+
+        # Refresh the inline button so they can click it again to retry fetching the code
+        retry_btn_kb = [[Button.inline("📩 Check OTP", data=f"checkotp:{target_phone}")]]
+        
+        # Edit the existing message in-place instead of creating spam messages
+        await event.edit(custom_otp_message, buttons=retry_btn_kb)
+        return
 
 # --- Execution Runtime Initialization Loop ---
 async def main():

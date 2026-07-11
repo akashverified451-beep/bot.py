@@ -11,10 +11,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 # Load secure configuration states
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
-# Telethon requires an API_ID and API_HASH along with the Bot Token. 
-# Using default safe values, but you can change these via Render Environment Variables if needed.
-API_ID = int(os.getenv("API_ID", "2040")) 
-API_HASH = os.getenv("API_HASH", "b1d54e54de9f6a79cd1e4303142a78b4")
+
+# 🔴 REPLACE THE VALUES BELOW WITH YOUR ACTUAL TELEGRAM API CREDENTIALS:
+API_ID = int(os.getenv("API_ID", "35742827")) 
+API_HASH = os.getenv("API_HASH", "f2955d75aa8ace7c421a2bb6152c5dd3")
 
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
@@ -234,3 +234,7 @@ async def admin_deny_click(event):
     if event.sender_id != ADMIN_TELEGRAM_ID:
         return
         
+    data_str = event.data.decode('utf-8')
+    _, claim_id = data_str.split(":")
+    
+    conn = sqlite3.connect(DB_PATH)

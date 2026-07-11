@@ -1,11 +1,9 @@
-
 import os
 import random
 import logging
 import io
 import sqlite3
 import asyncio
-import time
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
@@ -13,10 +11,8 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 
-# Core Dashboard logging config
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Variables configuration strings 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAEsp3UI6Iv5x4y8k4tW9z33LVYFcLEnqlc")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
@@ -31,22 +27,23 @@ def init_db():
     db_dir = os.path.dirname(DB_PATH)
     if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir, exist_ok=True)
-        logging.info(f"Created persistent database directory structure at: {db_dir}")
-
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS users (uid INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0, join_date TEXT)")
         conn.commit()
-    logging.info(f"Connected successfully to SQLite database at: {DB_PATH}")
 
 def get_user_bal(uid):
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT balance FROM users WHERE uid = ?", (uid,)).fetchone()
-        return row[0] if row else 0
+        if row:
+            return row[0]
+        return 0
 
 def get_user_jd(uid):
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT join_date FROM users WHERE uid = ?", (uid,)).fetchone()
-        return row[0] if row else "N/A"
+        if row:
+            return row[0]
+        return "N/A"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -76,12 +73,15 @@ async def cmd_start(msg: Message):
 
 @dp.message(F.text == "💼 Wallet")
 async def wallet_handler(msg: Message):
-    await msg.answer(text=f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{get_user_bal(msg.from_user.id)}</b>\n\nPlease select your funding process.", reply_markup=balance_kb(), parse_mode="HTML")
+    bal = get_user_bal(msg.from_user.id)
+    await msg.answer(text=f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", reply_markup=balance_kb(), parse_mode="HTML")
 
 @dp.message(F.text == "👤 User Profile")
 async def profile_handler(msg: Message):
     uid = msg.from_user.id
-    await msg.answer(text=f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{get_user_bal(uid)}\n📅 <b>Join Date:</b> {get_user_jd(uid)}", parse_mode="HTML")
+    bal = get_user_bal(uid)
+    jd = get_user_jd(uid)
+    await msg.answer(text=f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{bal}\n📅 <b>Join Date:</b> {jd}", parse_mode="HTML")
 
 @dp.message(F.text == "🔙 Back to Main Menu")
 async def back_handler(msg: Message):
@@ -96,7 +96,6 @@ async def add_funds_handler(msg: Message):
     import qrcode
     uid = msg.from_user.id
     txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
-    
     claim_id = str(random.randint(1000, 9999))
     pending_claims[claim_id] = {"uid": uid, "txn": txn, "session_amt": 0}
     
@@ -112,23 +111,20 @@ async def add_funds_handler(msg: Message):
     ])
     await msg.answer_photo(photo=BufferedInputFile(buf.read(), filename="qr.png"), caption=cap, parse_mode="HTML", reply_markup=kb)
 
-# FIXED: Correct unpacking format applied to colon delimiter splits
 @dp.callback_query(F.data.startswith("req:"))
 async def handle_status_check(cb: CallbackQuery, state: FSMContext):
-    _, claim_id = cb.data.split(":")
+    data_list = cb.data.split(":")
+    claim_id = data_list[1]
+    
     if claim_id not in pending_claims:
         await cb.answer("❌ This payment session expired or has already been reviewed.")
         return
         
     await state.update_data(current_claim_id=claim_id)
-    
     await cb.message.edit_caption(
-        caption="⚠️ <b>Payment Verification Required</b>\n\n"
-                "Please upload and send a clear <b>screenshot image</b> of your transaction payment receipt now.\n\n"
-                "<i>*Note: Your deposit request will not reach the administrator without your screenshot image submission.</i>", 
+        caption="⚠️ <b>Payment Verification Required</b>\n\nPlease upload and send a clear <b>screenshot image</b> of your transaction payment receipt now.\n\n<i>*Note: Your deposit request will not reach the administrator without your screenshot image submission.</i>", 
         parse_mode="HTML"
     )
-    
     await state.set_state(DepositStates.waiting_for_screenshot)
     await cb.answer()
 
@@ -144,7 +140,6 @@ async def process_payment_screenshot(msg: Message, state: FSMContext):
 
     uid = pending_claims[claim_id]["uid"]
     txn = pending_claims[claim_id]["txn"]
-    
     photo_file_id = msg.photo[-1].file_id
     
     await msg.answer("⏳ <b>Screenshot Uploaded!</b>\nYour verification request along with your screenshot has been dispatched to the admin. Please await confirmation.", parse_mode="HTML")
@@ -167,9 +162,11 @@ async def process_invalid_screenshot_type(msg: Message):
 
 @dp.callback_query(F.data.startswith("add:"))
 async def admin_add_click(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_TELEGRAM_ID: return
-    _, claim_id, add_amt = cb.data.split(":")
-    add_amt = int(add_amt)
+    if cb.from_user.id != ADMIN_TELEGRAM_ID:
+        return
+    data_list = cb.data.split(":")
+    claim_id = data_list[1]
+    add_amt = int(data_list[2])
     
     if claim_id not in pending_claims:
         await cb.message.edit_caption(caption="❌ This transaction claim tracking context has expired.")
@@ -177,7 +174,6 @@ async def admin_add_click(cb: CallbackQuery):
         
     uid = pending_claims[claim_id]["uid"]
     txn = pending_claims[claim_id]["txn"]
-    
     pending_claims[claim_id]["session_amt"] += add_amt
     current_total = pending_claims[claim_id]["session_amt"]
     
@@ -186,7 +182,6 @@ async def admin_add_click(cb: CallbackQuery):
         conn.commit()
         
     await cb.answer(f"Added +₹{add_amt}")
-    
     akb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ ₹1", callback_data=f"add:{claim_id}:1"), InlineKeyboardButton(text="➕ ₹5", callback_data=f"add:{claim_id}:5")],
         [InlineKeyboardButton(text="➕ ₹10", callback_data=f"add:{claim_id}:10"), InlineKeyboardButton(text="➕ ₹50", callback_data=f"add:{claim_id}:50")],
@@ -198,7 +193,14 @@ async def admin_add_click(cb: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("send:"))
 async def admin_send_receipt_click(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_TELEGRAM_ID: return
-    _, claim_id = cb.data.split(":")
+    if cb.from_user.id != ADMIN_TELEGRAM_ID:
+        return
+    data_list = cb.data.split(":")
+    claim_id = data_list[1]
     
     if claim_id not in pending_claims:
+        await cb.message.edit_caption(caption="❌ This payment tracking session context has expired.")
+        return
+        
+    uid = pending_claims[claim_id]["uid"]
+    txn = pending_claims[claim_id]["txn"]

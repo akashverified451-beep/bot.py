@@ -135,9 +135,9 @@ async def global_message_handler(event):
         return
 
     
-    # 5. Handle Buy Telegram Account Button (Fully Automated Global Dynamic Inventory)
+        # 5. Handle Buy Telegram Account Button (Fully Automated Global Dynamic Inventory)
     elif text == "🛍️ Buy Telegram Account":
-        # 1. Global Price Rule Configuration Map (Set your default & custom rules)
+        # 1. Global Price Rule Configuration Map
         DEFAULT_PRICE = 53.39
         custom_prices = {
             "Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04,
@@ -152,13 +152,21 @@ async def global_message_handler(event):
             "Chile": "🇨🇱", "Togo": "🇹🇬", "Angola": "🇦🇴", "Japan": "🇯🇵", "Nepal": "🇳🇵"
         }
 
-                # 3. Dynamic Phone Prefix Map Identifier Matrix (Ensure clean strings with NO trailing spaces)
+        # 3. Dynamic Phone Prefix Map Identifier Matrix
         prefix_to_country = {
             "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
             "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
             "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
             "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
         }
+
+        # List of known Canadian Area Codes to differentiate from the US
+        canada_area_codes = [
+            "204", "226", "236", "249", "250", "289", "306", "343", "365", "403", "416", "418", 
+            "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "600", 
+            "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819", 
+            "825", "867", "873", "902", "905"
+        ]
 
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
@@ -173,13 +181,20 @@ async def global_message_handler(event):
                 
             detected_country = "Other International"
             
-            # Match country prefix using longest-first sort ordering
-            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-                if clean_phone.startswith(prefix):
-                    detected_country = prefix_to_country[prefix]
-                    break
+            # Smart North American parsing rule (+1 split)
+            if clean_phone.startswith("+1") and len(clean_phone) >= 5:
+                area_code = clean_phone[2:5]
+                if area_code in canada_area_codes:
+                    detected_country = "Canada"
+                else:
+                    detected_country = "United States"
+            else:
+                # Standard international lookup routing matrix
+                for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                    if clean_phone.startswith(prefix):
+                        detected_country = prefix_to_country[prefix]
+                        break
             
-            # Clean trailing spaces to prevent dictionary key mismatching
             detected_country = detected_country.strip()
             inventory[detected_country] = inventory.get(detected_country, 0) + 1
 
@@ -192,16 +207,15 @@ async def global_message_handler(event):
             ]
         ]
 
-        # 7. Dynamically generate available rows
+        # 7. Dynamically generate rows ordered by available inventory sizing
         for country_name, stock_qty in inventory.items():
-            # Get the exact flag using the clean country name string
-            flag = country_flags.get(country_name.strip(), "🌐")
-            price = custom_prices.get(country_name.strip(), DEFAULT_PRICE)
+            flag = country_flags.get(country_name, "🌐")
+            price = custom_prices.get(country_name, DEFAULT_PRICE)
             
-            callback_payload = f"buy_tg_{country_name.strip()}"
+            callback_payload = f"buy_tg_{country_name}"
             
             country_row = [
-                Button.inline(f"{flag} {country_name.strip()}", data=callback_payload),
+                Button.inline(f"{flag} {country_name}", data=callback_payload),
                 Button.inline(f"₹{price:.1f}", data=callback_payload),
                 Button.inline(f"[{stock_qty}] ✅", data=callback_payload)
             ]
@@ -210,6 +224,7 @@ async def global_message_handler(event):
         await event.respond("📊 **Available Telegram Services**", buttons=tg_services_kb)
         event.handled = True
         return
+
 
       
   # 6. Handle Buy Whatsapp OTP Button

@@ -79,22 +79,31 @@ async def global_message_handler(event):
     uid = event.sender_id
     text = event.text or ""
 
-    # Admin Stock Adder Command with Live Verification Engine
+    # Admin Stock Adder Command with Integrated Live Price Configuration Matrix
     if text.startswith("/addstock") and uid == ADMIN_TELEGRAM_ID:
         try:
-            # Expected format: /addstock phone,api_id,api_hash,string_session
+            # Expected formats:
+            # OPTION A (With custom price): /addstock phone,api_id,api_hash,session_string,price
+            # OPTION B (Keep existing price): /addstock phone,api_id,api_hash,session_string
             command_args = text.split(" ", 1)[1]
-            phone, api_id_val, api_hash_val, session_str = command_args.split(",")
+            args_list = command_args.split(",")
             
-            phone = phone.strip()
-            api_id_val = api_id_val.strip()
-            api_hash_val = api_hash_val.strip()
-            session_str = session_str.strip()
+            if len(args_list) < 4:
+                raise ValueError("Insufficient arguments provided.")
+                
+            phone = args_list[0].strip()
+            api_id_val = args_list[1].strip()
+            api_hash_val = args_list[2].strip()
+            session_str = args_list[3].strip()
             
-            # Send an interim status tracking update to the admin
+            # Detect optional trailing pricing variable argument parameter
+            set_custom_price = None
+            if len(args_list) == 5:
+                set_custom_price = float(args_list[4].strip())
+            
             progress_msg = await event.respond("⏳ **Verifying login credentials against Telegram servers...**")
             
-            # 1. Spawn a temporary isolated runtime client to authenticate the session string
+            # 1. Spawn temporary runtime client to validate authentication safety
             from telethon.sessions import StringSession
             temp_client = TelegramClient(
                 StringSession(session_str), 
@@ -106,34 +115,67 @@ async def global_message_handler(event):
             is_valid = False
             try:
                 await temp_client.connect()
-                # Query authorization state to prove the string key is live
                 is_valid = await temp_client.is_user_authorized()
             except Exception as auth_error:
-                logging.warning(f"Session string pre-check failed: {auth_error}")
+                logging.warning(f"Session string check failed: {auth_error}")
                 is_valid = False
             finally:
                 await temp_client.disconnect()
                 
-            # 2. Reject the transaction immediately if validation fails
             if not is_valid:
                 await progress_msg.edit("❌ **Stock Rejected!** The session string or API credentials provided are invalid or expired.")
                 event.handled = True
                 return
                 
-            # 3. Commit verified and active credentials safely to your database pool
+            # 2. Derive structural country mappings to set price targets correctly
+            prefix_to_country = {
+                "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
+                "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
+                "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
+                "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
+            }
+            
+            clean_phone = phone
+            if not clean_phone.startswith("+"):
+                clean_phone = "+" + clean_phone
+                
+            detected_country = "Other International"
+            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                if clean_phone.startswith(prefix):
+                    detected_country = prefix_to_country[prefix]
+                    break
+            
+            # 3. Commit verification loops safely to your storage engine
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
+                    # Save stock credentials record
                     await cursor.execute(
                         "INSERT INTO available_accounts (phone_number, api_id, api_hash, string_session) VALUES (%s, %s, %s, %s)",
                         (phone, api_id_val, api_hash_val, session_str)
                     )
+                    
+                    # Update dynamic pricing if custom value is provided
+                    price_note = ""
+                    if set_custom_price is not None:
+                        await cursor.execute(
+                            "INSERT INTO country_prices (country, price) VALUES (%s, %s) "
+                            "ON CONFLICT (country) DO UPDATE SET price = EXCLUDED.price",
+                            (detected_country, set_custom_price)
+                        )
+                        price_note = f"\n💰 **Price Auto-Configured:** ₹{set_custom_price:.2f} for {detected_country}"
+                        
                     await conn.commit()
             
-            await progress_msg.edit(f"✅ **Stock Verified & Active!** Successfully added account `{phone}` to the active stock pile.")
+            await progress_msg.edit(f"✅ **Stock Verified & Active!**\n\n📞 Phone: `{phone}`\n🌍 Target Group: **{detected_country}**{price_note}")
         except Exception as e:
-            await event.respond(f"❌ **Format Error!** Use:\n`/addstock phone,api_id,api_hash,session_string`\n\nError: {e}")
+            await event.respond(
+                f"❌ **Format Error!** Use one of these patterns:\n\n"
+                f"🔹 **With New Price:**\n`/addstock phone,api_id,api_hash,session,price`\n\n"
+                f"🔹 **Keep Current Price:**\n`/addstock phone,api_id,api_hash,session`"
+            )
         event.handled = True
         return
+
         
     # Admin Stock Verification & Cleanup Engine
     if text.startswith("/cleanstock") and uid == ADMIN_TELEGRAM_ID:

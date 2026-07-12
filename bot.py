@@ -429,16 +429,21 @@ async def callback_handler(event):
         return
 
     # # 1. First Step: User clicks a country purchase button
-    if data.startswith("buy_tg_"):
+        if data.startswith("buy_tg_"):
         await event.answer("Validating warehouse stock pipeline...", alert=False)
         target_country = data.replace("buy_tg_", "").strip()
-
+        
         DEFAULT_PRICE = 53.39
         custom_prices = {
             "Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04,
             "Canada": 40.04, "United States": 41.00, "India": 41.00, "Ethiopia": 41.00
         }
-
+        
+        country_flags = {
+            "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
+            "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
+        }
+        
         prefix_to_country = {
             "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
             "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
@@ -446,17 +451,15 @@ async def callback_handler(event):
             "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
         }
 
-        # Resolve the specific prefix target for the clicked country row
-        target_prefix = None
-        for prefix, name in prefix_to_country.items():
-            if name.strip() == target_country:
-                target_prefix = prefix
-                break
-
+        canada_area_codes = [
+            "204", "226", "236", "249", "250", "289", "306", "343", "365", "403", "416", "418", 
+            "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "600", 
+            "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819", 
+            "825", "867", "873", "902", "905"
+        ]
 
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
-                # Retrieve available options to process structural selection
                 await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts")
                 all_stock = await cursor.fetchall()
                 
@@ -466,18 +469,22 @@ async def callback_handler(event):
                     if not clean_phone.startswith("+"):
                         clean_phone = "+" + clean_phone
                     
-                    # Core matching logic rules criteria validation filtering
-                    if target_country == "Other International":
-                        # If "Other International" was chosen, take numbers that don't match any known prefix
-                        is_known = any(clean_phone.startswith(p) for p in prefix_to_country.keys())
-                        if not is_known:
-                            selected_account = (phone, session_str)
-                            break
+                    # 1. Check North American Region routing flags explicitly
+                    if clean_phone.startswith("+1") and len(clean_phone) >= 5:
+                        area_code = clean_phone[2:5]
+                        account_country = "Canada" if area_code in canada_area_codes else "United States"
                     else:
-                        # Otherwise, match the exact country prefix selected
-                        if target_prefix and clean_phone.startswith(target_prefix):
-                            selected_account = (phone, session_str)
-                            break
+                        # 2. Check global international prefixes USING LONGEST-FIRST SORTING to prevent mismatch crashes
+                        account_country = "Other International"
+                        for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                            if clean_phone.startswith(prefix):
+                                account_country = prefix_to_country[prefix]
+                                break
+                    
+                    # 3. Clean trailing formatting states and evaluate the match requirement
+                    if account_country.strip() == target_country:
+                        selected_account = (phone, session_str)
+                        break
                 
                 if not selected_account:
                     await event.respond(f"⚠️ **Out of Stock!** No available numbers match your request for **{target_country}**.")
@@ -485,9 +492,7 @@ async def callback_handler(event):
                 
                 phone_to_buy, session_to_buy = selected_account
                 
-                # [Insert your balance check and cost deduction queries here]
-                
-                # Delete the specific allocated row to prevent double-purchasing issues
+                # Delete the matching target number to allocate and lock the active purchase flow
                 await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
                 await cursor.execute(
                     "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
@@ -495,7 +500,7 @@ async def callback_handler(event):
                 )
                 await conn.commit()
 
-        # Generate responsive display labels dynamically matching output values
+        # Build order response mapping templates safely
         display_flag = country_flags.get(target_country, "🌐")
         display_price = custom_prices.get(target_country, DEFAULT_PRICE)
 
@@ -507,7 +512,6 @@ async def callback_handler(event):
             f"After that, you'll need to request a new number."
         )
         
-        # Output with context button triggers linked perfectly
         await event.respond(order_msg, buttons=[[Button.inline("📩 Check OTP Again", data=f"check_otp_{phone_to_buy}")]])
         return
 

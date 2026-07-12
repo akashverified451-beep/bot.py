@@ -78,29 +78,65 @@ async def global_message_handler(event):
         
     uid = event.sender_id
     text = event.text or ""
-    
-    # Admin Stock Adder Command
+
+    # Admin Stock Adder Command with Live Verification Engine
     if text.startswith("/addstock") and uid == ADMIN_TELEGRAM_ID:
         try:
             # Expected format: /addstock phone,api_id,api_hash,string_session
             command_args = text.split(" ", 1)[1]
             phone, api_id_val, api_hash_val, session_str = command_args.split(",")
             
+            phone = phone.strip()
+            api_id_val = api_id_val.strip()
+            api_hash_val = api_hash_val.strip()
+            session_str = session_str.strip()
+            
+            # Send an interim status tracking update to the admin
+            progress_msg = await event.respond("⏳ **Verifying login credentials against Telegram servers...**")
+            
+            # 1. Spawn a temporary isolated runtime client to authenticate the session string
+            from telethon.sessions import StringSession
+            temp_client = TelegramClient(
+                StringSession(session_str), 
+                int(api_id_val), 
+                api_hash_val,
+                connection_retries=1
+            )
+            
+            is_valid = False
+            try:
+                await temp_client.connect()
+                # Query authorization state to prove the string key is live
+                is_valid = await temp_client.is_user_authorized()
+            except Exception as auth_error:
+                logging.warning(f"Session string pre-check failed: {auth_error}")
+                is_valid = False
+            finally:
+                await temp_client.disconnect()
+                
+            # 2. Reject the transaction immediately if validation fails
+            if not is_valid:
+                await progress_msg.edit("❌ **Stock Rejected!** The session string or API credentials provided are invalid or expired.")
+                event.handled = True
+                return
+                
+            # 3. Commit verified and active credentials safely to your database pool
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
                     await cursor.execute(
                         "INSERT INTO available_accounts (phone_number, api_id, api_hash, string_session) VALUES (%s, %s, %s, %s)",
-                        (phone.strip(), api_id_val.strip(), api_hash_val.strip(), session_str.strip())
+                        (phone, api_id_val, api_hash_val, session_str)
                     )
                     await conn.commit()
             
-            await event.respond(f"✅ Successfully added account `{phone.strip()}` to stock pile!")
+            await progress_msg.edit(f"✅ **Stock Verified & Active!** Successfully added account `{phone}` to the active stock pile.")
         except Exception as e:
             await event.respond(f"❌ **Format Error!** Use:\n`/addstock phone,api_id,api_hash,session_string`\n\nError: {e}")
         event.handled = True
         return
 
-    # 1. Handle /start Command
+
+ # 1. Handle /start Command
     if text.startswith("/start"):
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:

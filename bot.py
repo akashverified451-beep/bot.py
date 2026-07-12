@@ -195,6 +195,31 @@ async def global_message_handler(event):
         event.handled = True
         return
 
+        # Admin Quick Price Modifier Command
+    if text.startswith("/updateprice") and uid == ADMIN_TELEGRAM_ID:
+        try:
+            # Expected format: /updateprice CountryName,Price
+            command_args = text.split(" ", 1)[1]
+            country_param, price_param = command_args.split(",")
+            
+            target_country = country_param.strip()
+            new_price = float(price_param.strip())
+            
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute(
+                        "INSERT INTO country_prices (country, price) VALUES (%s, %s) "
+                        "ON CONFLICT (country) DO UPDATE SET price = EXCLUDED.price",
+                        (target_country, new_price)
+                    )
+                    await conn.commit()
+            
+            await event.respond(f"💰 **Live Price Updated!**\n\n🌍 Country: **{target_country}**\n💵 New Price: **₹{new_price:.2f}**\n\n*All current and future stock for this country will use this price instantly.*")
+        except Exception as e:
+            await event.respond(f"❌ **Format Error!** Use:\n`/updateprice CountryName,Price`\n\nExample: `/updateprice India,48`")
+        event.handled = True
+        return
+
         
     # Admin Stock Verification & Cleanup Engine
     if text.startswith("/cleanstock") and uid == ADMIN_TELEGRAM_ID:

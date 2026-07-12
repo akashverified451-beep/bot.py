@@ -600,17 +600,21 @@ async def callback_handler(event):
                 )
                 await conn.commit()
 
-        # Build order response mapping templates safely
+                # Build order response mapping templates safely
         display_flag = country_flags.get(target_country, "🌐")
         display_price = custom_prices.get(target_country, DEFAULT_PRICE)
 
-            success_msg = (
+        success_msg = (
             f"✅ **Number reserved successfully**\n\n"
             f"📞 **Phone:** `{phone_to_buy}`\n"
             f"🌍 **Country:** {target_country} {display_flag}\n"
             f"💰 **Price:** ₹{display_price:.1f}\n\n"
             f"🌟 **Note:** Number cannot be cancelled because OTP Delivery is guaranteed!"
         )
+        
+        await event.respond(success_msg, buttons=[[Button.inline("✉️ Check OTP", data=f"checkotp:{phone_to_buy}")]])
+        return
+
         
         await event.respond(success_msg, buttons=[[Button.inline("✉️ Check OTP", data=f"checkotp:{phone_to_buy}")]])
         return

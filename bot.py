@@ -604,18 +604,17 @@ async def callback_handler(event):
         display_flag = country_flags.get(target_country, "🌐")
         display_price = custom_prices.get(target_country, DEFAULT_PRICE)
 
-        order_msg = (
-            f"{display_flag} **{target_country}**   ₹{display_price:.1f}   ✅\n\n"
-            f"📞 **Phone Number:** `{phone_to_buy}`\n"
-            f"📩 **OTP:** ⏳ NO LIVE SMS FOUND YET\n\n"
-            f"⚠️ **Note:** The Re-Request button is active for 24 hours. "
-            f"After that, you'll need to request a new number."
+            success_msg = (
+            f"✅ **Number reserved successfully**\n\n"
+            f"📞 **Phone:** `{phone_to_buy}`\n"
+            f"🌍 **Country:** {target_country} {display_flag}\n"
+            f"💰 **Price:** ₹{display_price:.1f}\n\n"
+            f"🌟 **Note:** Number cannot be cancelled because OTP Delivery is guaranteed!"
         )
         
-        await event.respond(order_msg, buttons=[[Button.inline("📩 Check OTP Again", data=f"check_otp_{phone_to_buy}")]])
+        await event.respond(success_msg, buttons=[[Button.inline("✉️ Check OTP", data=f"checkotp:{phone_to_buy}")]])
         return
 
- 
         # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):
         _, target_phone = data.split(":")

@@ -38,8 +38,27 @@ async def init_db():
             await cursor.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid BIGINT, txn TEXT, session_amt INT DEFAULT 0)")
             await cursor.execute("CREATE TABLE IF NOT EXISTS active_orders (phone_number TEXT, uid BIGINT, status TEXT)")
             await cursor.execute("CREATE TABLE IF NOT EXISTS available_accounts (phone_number TEXT, api_id TEXT, api_hash TEXT, string_session TEXT)")
+            await cursor.execute("CREATE TABLE IF NOT EXISTS country_prices (country TEXT PRIMARY KEY, price NUMERIC)")
             await conn.commit()
     logging.info("PostgreSQL structural database tables checked/created successfully.")
+
+async def get_country_prices():
+    """Fetches real-time custom pricing from the database with hardcoded defaults as fallbacks."""
+    defaults = {
+        "Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04,
+        "Canada": 40.04, "United States": 41.00, "India": 41.00, "Ethiopia": 41.00,
+        "DEFAULT": 53.39
+    }
+    try:
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT country, price FROM country_prices")
+                rows = await cursor.fetchall()
+                for country, price in rows:
+                    defaults[country.strip()] = float(price)
+    except Exception as e:
+        logging.error(f"Error fetching dynamic prices: {e}")
+    return defaults
 
 async def get_user_bal(uid):
     async with await get_db_connection() as conn:

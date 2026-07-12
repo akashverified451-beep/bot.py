@@ -432,12 +432,13 @@ async def callback_handler(event):
         if data.startswith("buy_tg_"):
         await event.answer("Validating warehouse stock pipeline...", alert=False)
         target_country = data.replace("buy_tg_", "").strip()
-        
+
         DEFAULT_PRICE = 53.39
         custom_prices = {
             "Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04,
             "Canada": 40.04, "United States": 41.00, "India": 41.00, "Ethiopia": 41.00
         }
+
         
         country_flags = {
             "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",

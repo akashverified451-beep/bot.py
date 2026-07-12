@@ -323,13 +323,11 @@ async def global_message_handler(event):
     
         # 5. Handle Buy Telegram Account Button (Fully Automated Global Dynamic Inventory)
     elif text == "🛍️ Buy Telegram Account":
-        # 1. Global Price Rule Configuration Map
-        DEFAULT_PRICE = 53.39
-        custom_prices = {
-            "Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04,
-            "Canada": 40.04, "United States": 41.00, "India": 41.00, "Ethiopia": 41.00
-        }
+                # 1. Global Price Rule Configuration Map (Fetched dynamically from database)
+        custom_prices = await get_country_prices()
+        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
 
+       
         # 2. Automated Country-to-Emoji Flag Reference Engine
         country_flags = {
             "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",

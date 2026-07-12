@@ -403,28 +403,27 @@ async def cancel_or_deny_click(event):
     return
 
 
-# --- Complete High-Speed Error-Free Callback & Logic Engine ---
+# --- Complete High-Speed Error-Free Callback Query Handler ---
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
     data = event.data.decode('utf-8')
     uid = event.sender_id
-    
+
     if data == "lbl":
         await event.answer()
         return
 
-    # 1. First Step: User clicks a country purchase button
-            if data.startswith("buy_tg_"):
+    # # 1. First Step: User clicks a country purchase button
+    if data.startswith("buy_tg_"):
         await event.answer("Validating warehouse stock pipeline...", alert=False)
         target_country = data.replace("buy_tg_", "").strip()
 
-        
         DEFAULT_PRICE = 53.39
         custom_prices = {
             "Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04,
             "Canada": 40.04, "United States": 41.00, "India": 41.00, "Ethiopia": 41.00
         }
-        
+
         prefix_to_country = {
             "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
             "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
@@ -438,6 +437,7 @@ async def callback_handler(event):
             if name.strip() == target_country:
                 target_prefix = prefix
                 break
+
 
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:

@@ -314,64 +314,55 @@ async def global_message_handler(event):
         event.handled = True
         return
     
-        # Handle Back Button Action cleanly
+    # 4. Handle Back Button
     elif text == "🔙 Back to Main Menu":
-        try:
-            await event.respond("Welcome back to the main menu!")
-        except Exception as menu_err:
-            logging.error(f"Error drawing menu: {menu_err}")
+        await event.respond("👋 Hello! Welcome to SKY OTP Bot.\n\n✨ Use the buttons below to explore our services.", buttons=main_kb())
         event.handled = True
         return
 
-# # 5. Handle Buy Telegram Account Button Action
+    
+        # 5. Handle Buy Telegram Account Button (Fully Automated Global Dynamic Inventory)
     elif text == "🛍️ Buy Telegram Account":
-          # # 1. Global Price Rule Configuration
-        custom_prices = await get_custom_prices(uid)
-        DEFAULT_PRICE = custom_prices.get("default", 5.0)
+                # 1. Global Price Rule Configuration Map (Fetched dynamically from database)
+        custom_prices = await get_country_prices()
+        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
 
-        # # 2. Automated Country-to-Emoji Flag Mapping
+       
+        # 2. Automated Country-to-Emoji Flag Reference Engine
         country_flags = {
-            "Colombia": "🇨🇴", "Nigeria": "🇳🇬",
-            "United States": "🇺🇸", "India": "🇮🇳",
-            "Iran": "🇮🇷", "Pakistan": "🇵🇰",
-            "Chile": "🇨🇱", "Togo": "🇹🇬",
-            "Myanmar": "🇲🇲", "United Kingdom": "🇬🇧",
-            "Bangladesh": "🇧🇩", "Russia": "🇷🇺",
-            "Brazil": "🇧🇷", "Vietnam": "🇻🇳",
-            "Philippines": "🇵🇭"
+            "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
+            "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹", "Egypt": "🇪🇬",
+            "Iran": "🇮🇷", "Pakistan": "🇵🇰", "Indonesia": "🇮🇩", "Kenya": "🇰🇪",
+            "Chile": "🇨🇱", "Togo": "🇹🇬", "Angola": "🇦🇴", "Japan": "🇯🇵", "Nepal": "🇳🇵"
         }
 
-        # # 3. Dynamic Phone Prefix Map Identification
+        # 3. Dynamic Phone Prefix Map Identifier Matrix
         prefix_to_country = {
-            "+57": "Colombia", "+234": "Nigeria",
-            "+1": "United States", "+91": "India",
-            "+98": "Iran", "+92": "Pakistan",
-            "+56": "Chile", "+228": "Togo",
-            "+95": "Myanmar", "+44": "United Kingdom",
-            "+880": "Bangladesh", "+7": "Russia",
-            "+55": "Brazil", "+84": "Vietnam",
-            "+63": "Philippines"
+            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
+            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
+            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
+            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
         }
 
-        # # List of known Canadian Area Codes
+        # List of known Canadian Area Codes to differentiate from the US
         canada_area_codes = [
-            "204", "226", "236", "249", "250",
-            "431", "437", "438", "450", "506",
-            "604", "613", "639", "647", "705",
+            "204", "226", "236", "249", "250", "289", "306", "343", "365", "403", "416", "418", 
+            "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "600", 
+            "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819", 
             "825", "867", "873", "902", "905"
         ]
 
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute("SELECT ...") # Your query here
+                await cursor.execute("SELECT phone_number FROM available_accounts")
+                all_numbers = await cursor.fetchall()
 
-
-            all_numbers = await cursor.fetchall()
-            inventory = {}
-            for (phone,) in all_numbers:
+        inventory = {}
+        for (phone,) in all_numbers:
             clean_phone = phone.strip()
             if not clean_phone.startswith("+"):
                 clean_phone = "+" + clean_phone
+                
             detected_country = "Other International"
             
             # Smart North American parsing rule (+1 split)
@@ -621,15 +612,17 @@ async def callback_handler(event):
         await event.answer()
         return
 
-        # # 1. First Step: User clicks a country purchase button
+    # # 1. First Step: User clicks a country purchase button
     if data.startswith("buy_tg_"):
         await event.answer("Validating warehouse stock pipeline...", alert=False)
         target_country = data.replace("buy_tg_", "").strip()
-        
-        # Fetch live database prices dynamically instead of hardcoding
-        custom_prices = await get_country_prices()
-        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
-        
+
+        DEFAULT_PRICE = 53.39
+        custom_prices = {
+            "Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04,
+            "Canada": 40.04, "United States": 41.00, "India": 41.00, "Ethiopia": 41.00
+        }
+
         country_flags = {
             "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
             "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
@@ -660,16 +653,19 @@ async def callback_handler(event):
                     if not clean_phone.startswith("+"):
                         clean_phone = "+" + clean_phone
                     
+                    # 1. Check North American Region routing flags explicitly
                     if clean_phone.startswith("+1") and len(clean_phone) >= 5:
                         area_code = clean_phone[2:5]
                         account_country = "Canada" if area_code in canada_area_codes else "United States"
                     else:
+                        # 2. Check global international prefixes USING LONGEST-FIRST SORTING to prevent mismatch crashes
                         account_country = "Other International"
                         for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
                             if clean_phone.startswith(prefix):
                                 account_country = prefix_to_country[prefix]
                                 break
                     
+                    # 3. Clean trailing formatting states and evaluate the match requirement
                     if account_country.strip() == target_country:
                         selected_account = (phone, session_str)
                         break
@@ -680,6 +676,7 @@ async def callback_handler(event):
                 
                 phone_to_buy, session_to_buy = selected_account
                 
+                # Delete the matching target number to allocate and lock the active purchase flow
                 await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
                 await cursor.execute(
                     "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
@@ -687,6 +684,7 @@ async def callback_handler(event):
                 )
                 await conn.commit()
 
+                # Build order response mapping templates safely
         display_flag = country_flags.get(target_country, "🌐")
         display_price = custom_prices.get(target_country, DEFAULT_PRICE)
 
@@ -697,6 +695,10 @@ async def callback_handler(event):
             f"💰 **Price:** ₹{display_price:.1f}\n\n"
             f"🌟 **Note:** Number cannot be cancelled because OTP Delivery is guaranteed!"
         )
+        
+        await event.respond(success_msg, buttons=[[Button.inline("✉️ Check OTP", data=f"checkotp:{phone_to_buy}")]])
+        return
+
         
         await event.respond(success_msg, buttons=[[Button.inline("✉️ Check OTP", data=f"checkotp:{phone_to_buy}")]])
         return
@@ -763,41 +765,17 @@ async def callback_handler(event):
                 if 'temp_client' in locals() and temp_client.is_connected():
                     await temp_client.disconnect()
 
-        # 1. Dynamically read global price entries and country matching settings
-        custom_prices = await get_country_prices()
-        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
-        
-        country_flags = {
-            "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
-            "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
-        }
-        
-        prefix_to_country = {
-            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
-            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
-            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
-            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
-        }
-
-        # 2. Extract country metadata matching the active phone string selection
-        detected_country = "Other International"
-        for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-            if target_phone.startswith(prefix):
-                detected_country = prefix_to_country[prefix]
-                break
-
-        display_flag = country_flags.get(detected_country, "🌐")
-        display_price = custom_prices.get(detected_country, DEFAULT_PRICE)
-
-        # 3. Dynamic layout structures display accurate metrics seamlessly
+        # Clean display presentation payload without old text lines
         custom_otp_message = (
-            f"{display_flag} **{detected_country}**   ₹{display_price:.1f}   ✅\n\n"
+            "🇮🇳 India       ₹41.0       ✅\n\n"
             f"📞 **Phone Number:** `{target_phone}`\n"
             f"📩 **OTP:** **`{fetched_otp}`**\n\n"
-            f"⚠️ **Note:** The Re-Request button is active for 24 hours. "
-            f"After that, you'll need to request a new number."
+            "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
         )
-
+        
+        retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=data)]]
+        await event.edit(custom_otp_message, buttons=retry_btn_kb)
+        return
 
 # --- Execution Runtime Initialization Loop ---
 async def main():

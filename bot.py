@@ -400,7 +400,6 @@ async def global_message_handler(event):
 
         inventory = {}
         for row in all_numbers:
-            # Safely unpack the phone number regardless of database return format
             if isinstance(row, (tuple, list)):
                 phone = str(row[0]) if len(row) > 0 else ""
             elif isinstance(row, dict):
@@ -410,14 +409,13 @@ async def global_message_handler(event):
                 
             clean_phone = phone.strip()
             if not clean_phone:
-                continue # Skip blank rows safely
+                continue
                 
             if not clean_phone.startswith("+"):
                 clean_phone = "+" + clean_phone
             
             detected_country = "Other International"
             
-            # Smart North American parsing rule
             if clean_phone.startswith("+1") and len(clean_phone) >= 5:
                 area_code = clean_phone[2:5]
                 if area_code in canada_area_codes:
@@ -425,7 +423,6 @@ async def global_message_handler(event):
                 else:
                     detected_country = "United States"
             else:
-                # Standard international lookup routine
                 for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
                     if clean_phone.startswith(prefix):
                         detected_country = prefix_to_country[prefix]

@@ -364,15 +364,14 @@ async def global_message_handler(event):
 
         if not clean_phone.startswith("+"):
             clean_phone = "+" + clean_phone
-
         detected_country = "Other International"
-        
+
         # Smart North American parsing rule
         if clean_phone.startswith("+1") and len(clean_phone) >= 5:
             area_code = clean_phone[2:5]
             if area_code in canada_area_codes:
                 detected_country = "Canada"
-        else:
+            else:
                 detected_country = "United States"
 
         else:
@@ -384,6 +383,7 @@ async def global_message_handler(event):
 
         detected_country = detected_country.strip()
         inventory[detected_country] = inventory.get(detected_country, 0) + 1
+
 
         # 6. Initialize storefront table header rows
         tg_services_kb = [

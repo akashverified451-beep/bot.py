@@ -285,8 +285,40 @@ async def global_message_handler(event):
         event.handled = True
         return
 
+    # --- Admin Stats Command ---    
+    if text.startswith("/stats"):
+      ADMIN_ID = 8393210427
+      if uid != ADMIN_ID:
+          await event.respond("❌ You are not authorized to use this command.")
+          event.handled = True
+          return
 
- # 1. Handle /start Command
+      try:
+          async with await get_db_connection() as conn:
+               async with conn.cursor() as cursor:
+                    # Get total registered users
+                    await cursor.execute("SELECT COUNT(*) FROM users")
+                    total_users = (await cursor.fetchone())[0]
+
+                    # Get total accounts in stock
+                    await cursor.execute("SELECT COUNT(*) FROM available_accounts")
+                    total_stock = (await cursor.fetchone())[0]
+
+            stats_msg = (
+                "📊 **SKY BOT LIVE STATUS** 📊\n\n"
+                f"👥 **Total Registered Users:** {total_users}\n"
+                f"📦 **Total OTP Numbers in Stock:** {total_stock}\n\n"
+                "🟢 Bot is running smoothly on Render background worker."
+            )
+            await event.respond(stats_msg)
+        except Exception as e:
+            await event.respond(f"❌ Error compiling statistics: {str(e)}")
+            
+        event.handled = True
+        return
+
+
+    # 1. Handle /start Command
     if text.startswith("/start"):
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:

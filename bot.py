@@ -337,8 +337,8 @@ async def global_message_handler(event):
         "Myanmar": "🇲🇲"
     }
 
-        # 3. Dynamic Phone Prefix Map Identifier Matrix
-    prefix_to_country = {
+    # 3. Dynamic Phone Prefix Map Identification
+       prefix_to_country = {
         "+57": "Colombia", "+234": "Nigeria",
         "+91": "India", "+251": "Ethiopia",
         "+92": "Pakistan", "+62": "Indonesia",
@@ -346,22 +346,21 @@ async def global_message_handler(event):
         "+95": "Myanmar"
     }
 
+    # List of known Canadian Area Codes
+       canada_area_codes = [
+        "204", "226", "236", "249", "250",
+        "431", "437", "438", "450", "506",
+        "604", "613", "639", "647", "705",
+        "825", "867", "873", "902", "905"
+    ]
 
-        # List of known Canadian Area Codes to differentiate from the US
-        canada_area_codes = [
-            "204", "226", "236", "249", "250", "289", "306", "343", "365", "403", "416", "418", 
-            "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "600", 
-            "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819", 
-            "825", "867", "873", "902", "905"
-        ]
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT...")
+            all_numbers = await cursor.fetchall()
+            inventory = {}
+            for (phone,) in all_numbers:
 
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("SELECT phone_number FROM available_accounts")
-                all_numbers = await cursor.fetchall()
-
-        inventory = {}
-        for (phone,) in all_numbers:
             clean_phone = phone.strip()
             if not clean_phone.startswith("+"):
                 clean_phone = "+" + clean_phone

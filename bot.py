@@ -400,8 +400,13 @@ async def global_message_handler(event):
 
         inventory = {}
         for phone_info in all_numbers:
-            # Handle list or tuple unpacking safely
-            phone = phone_info[0] if isinstance(phone_info, (tuple, list)) else phone_info.get('phone_number') if isinstance(phone_info, dict) else phone_info
+            # Safely extract phone string depending on DB format (tuple or dict or raw string)
+            if isinstance(phone_info, (tuple, list)) and len(phone_info) > 0:
+                phone = phone_info[0]
+            elif isinstance(phone_info, dict):
+                phone = phone_info.get('phone_number', '')
+            else:
+                phone = str(phone_info)
             
             clean_phone = phone.strip()
             if not clean_phone.startswith("+"):
@@ -435,7 +440,6 @@ async def global_message_handler(event):
         await event.respond(response_text)
         event.handled = True
         return
-
 
         # 6. Initialize storefront table header rows
         tg_services_kb = [

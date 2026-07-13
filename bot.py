@@ -397,12 +397,13 @@ async def global_message_handler(event):
         ]
 
         async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-            wait cursor.execute("UPDATE available_accounts SET country = 'Afghanistan' WHERE phone_number LIKE '+93%'")
+        async with conn.cursor() as cursor:
+            await cursor.execute("UPDATE available_accounts SET country = 'Afghanistan' WHERE phone_number LIKE '+93%'")
             await cursor.execute("UPDATE available_accounts SET country = 'Myanmar' WHERE phone_number LIKE '+95%'")
             await conn.commit()
             await cursor.execute("SELECT phone_number FROM available_accounts")
             all_numbers = await cursor.fetchall()
+
 
         inventory = {}
         for (phone,) in all_numbers:

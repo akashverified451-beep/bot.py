@@ -462,7 +462,7 @@ async def global_message_handler(event):
 
       
   # 6. Handle Buy Whatsapp OTP Button
-    elif text == "🗨️ Buy Whatsapp OTP":
+    if text == "💬 Buy Whatsapp OTP":
         await event.respond("🔄 <b>Live WhatsApp OTP Activation Enabled</b>\n\nPlease request your verification code now.", parse_mode='html')
         event.handled = True
         return

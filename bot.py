@@ -393,13 +393,13 @@ async def global_message_handler(event):
         "604", "613", "639", "647", "705",
         "825", "867", "873", "902", "905"
     ]
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("SELECT phone_number FROM available_accounts")
-                all_numbers = await cursor.fetchall()
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT phone_number FROM available_accounts")
+            all_numbers = await cursor.fetchall()
 
-        inventory = {}
-        for row in all_numbers:
+    inventory = {}
+    for row in all_numbers:
             if isinstance(row, (tuple, list)):
                 phone = str(row[0]) if len(row) > 0 else ""
             elif isinstance(row, dict):

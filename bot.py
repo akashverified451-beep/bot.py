@@ -346,7 +346,7 @@ async def global_message_handler(event):
     }
 
     # List of known Canadian Area Codes
-        canada_area_codes = [
+    canada_area_codes = [
         "204", "226", "236", "249", "250",
         "431", "437", "438", "450", "506",
         "604", "613", "639", "647", "705",
@@ -355,24 +355,26 @@ async def global_message_handler(event):
 
     async with await get_db_connection() as conn:
         async with conn.cursor() as cursor:
-            await cursor.execute("SELECT...")
+            await cursor.execute("SELECT ...")
             all_numbers = await cursor.fetchall()
-            inventory = {}
-            for (phone,) in all_numbers:
 
-            clean_phone = phone.strip()
-            if not clean_phone.startswith("+"):
-                clean_phone = "+" + clean_phone
-                
-            detected_country = "Other International"
-            
-            # Smart North American parsing rule (+1 split)
-            if clean_phone.startswith("+1") and len(clean_phone) >= 5:
-                area_code = clean_phone[2:5]
-                if area_code in canada_area_codes:
-                    detected_country = "Canada"
-                else:
-                    detected_country = "United States"
+    inventory = {}
+    for (phone,) in all_numbers:
+        clean_phone = phone.strip()
+
+        if not clean_phone.startswith("+"):
+            clean_phone = "+" + clean_phone
+
+        detected_country = "Other International"
+
+        # Smart North American parsing rule
+        if clean_phone.startswith("+1") and len(clean_phone) >= 5:
+            area_code = clean_phone[2:5]
+            if area_code in canada_area_codes:
+                detected_country = "Canada"
+            else:
+                detected_country = "United States"
+
             else:
                 # Standard international lookup routing matrix
                 for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):

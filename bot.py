@@ -366,25 +366,24 @@ async def global_message_handler(event):
             clean_phone = "+" + clean_phone
 
         detected_country = "Other International"
-
+        
         # Smart North American parsing rule
         if clean_phone.startswith("+1") and len(clean_phone) >= 5:
             area_code = clean_phone[2:5]
             if area_code in canada_area_codes:
                 detected_country = "Canada"
-            else:
+        else:
                 detected_country = "United States"
-        
-        else:  # 👈 Line 378: Make sure this aligns perfectly with the 'if' on line 371
 
-                # Standard international lookup routing matrix
-                for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-                    if clean_phone.startswith(prefix):
-                        detected_country = prefix_to_country[prefix]
-                        break
-            
-            detected_country = detected_country.strip()
-            inventory[detected_country] = inventory.get(detected_country, 0) + 1
+        else:
+            # Standard international lookup routine
+            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                if clean_phone.startswith(prefix):
+                    detected_country = prefix_to_country[prefix]
+                    break
+
+        detected_country = detected_country.strip()
+        inventory[detected_country] = inventory.get(detected_country, 0) + 1
 
         # 6. Initialize storefront table header rows
         tg_services_kb = [

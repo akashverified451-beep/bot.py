@@ -362,10 +362,10 @@ async def global_message_handler(event):
 
     
     # # 5. Handle Buy Telegram Account Button
-elif text == "🛍️ Buy Telegram Account":
+    elif text == "🛍️ Buy Telegram Account":
     # # 1. Global Price Rule Configuration
-    custom_prices = await get_country_prices()
-    DEFAULT_PRICE = custom_prices.get("DEFAULT")
+        custom_prices = await get_country_prices()
+        DEFAULT_PRICE = custom_prices.get("DEFAULT")
 
 
     # 2. Automated Country-to-Emoji Flag

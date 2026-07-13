@@ -396,17 +396,19 @@ async def global_message_handler(event):
             "825", "867", "873", "902", "905"
         ]
 
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("UPDATE available_accounts SET country = 'Afghanistan' WHERE phone_number LIKE '+93%'")
-                await cursor.execute("UPDATE available_accounts SET country = 'Myanmar' WHERE phone_number LIKE '+95%'")
-                await conn.commit()
-                await cursor.execute("SELECT phone_number FROM available_accounts")
-                all_numbers = await cursor.fetchall()
+            async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("UPDATE available_accounts SET country = 'Afghanistan' WHERE phone_number LIKE '+93%'")
+            await cursor.execute("UPDATE available_accounts SET country = 'Myanmar' WHERE phone_number LIKE '+95%'")
+            await conn.commit()
+            await cursor.execute("SELECT phone_number FROM available_accounts")
+            raw_data = await cursor.fetchall()
+            # This safely converts any format (tuple or dict) into a clean string list
+            all_numbers = [r[0] if isinstance(r, (tuple, list)) else r.get('phone_number') if isinstance(r, dict) else str(r) for r in raw_data] if raw_data else []
 
 
         inventory = {}
-        for (phone,) in all_numbers:
+        for phone in all_numbers:
             clean_phone = phone.strip()
             if not clean_phone.startswith("+"):
                 clean_phone = "+" + clean_phone

@@ -369,11 +369,9 @@ async def global_message_handler(event):
             all_numbers = await cursor.fetchall()
             inventory = {}
             for (phone,) in all_numbers:
-
             clean_phone = phone.strip()
             if not clean_phone.startswith("+"):
                 clean_phone = "+" + clean_phone
-                
             detected_country = "Other International"
             
             # Smart North American parsing rule (+1 split)

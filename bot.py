@@ -321,17 +321,23 @@ async def global_message_handler(event):
 
 
     # 1. Handle /start Command
-    if text.startswith("/start"):
-          async with await get_db_connection() as conn:
-              async with conn.cursor() as cursor:
-                  await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
-                  if not await cursor.fetchone():
-                      now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                      await cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (%s, 0, %s)", (uid, now))
-                      await conn.commit()
-        await event.respond("👋 Hello! Welcome to SKY OTP Bot.\n\n✨ Use the buttons below to explore our services.", buttons=main_kb())
+    elif text.startswith("/start"):
+        try:
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
+                    if not await cursor.fetchone():
+                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        await cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (%s, 0, %s)", (uid, now))
+                        await conn.commit()
+            
+            await event.respond("👋 Hello! Welcome to SKY OTP Bot.\n\n✨ Use the buttons below to explore our services.", buttons=main_kb())
+        except Exception as start_err:
+            logging.error(f"Start command error: {start_err}")
+            
         event.handled = True
         return
+
 
     # 2. Handle Wallet Button
     elif text == "💼 Wallet":

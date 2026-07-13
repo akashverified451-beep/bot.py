@@ -362,9 +362,9 @@ async def global_message_handler(event):
 
     
     # 5. Handle Buy Telegram Account Button (Fully Automated Global Dynamic Inventory)
-     if "Buy Telegram Account" in text:
-         custom_prices = await get_country_prices()
-         DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+    elif "Buy Telegram Account" in text:
+          custom_prices = await get_country_prices()
+          DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
 
        
         # 2. Automated Country-to-Emoji Flag Reference Engine

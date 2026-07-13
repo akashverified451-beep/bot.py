@@ -287,7 +287,7 @@ async def global_message_handler(event):
 
 
      # --- Admin Stats Command ---
-     elif text.startswith("/stats"):
+     if text.startswith("/stats"):
         ADMIN_ID = 8393210427
         if uid != ADMIN_ID:
             await event.respond("❌ You are not authorized to use this command.")

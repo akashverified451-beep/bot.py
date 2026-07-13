@@ -324,7 +324,7 @@ async def global_message_handler(event):
         return
 
 # # 5. Handle Buy Telegram Account Button Action
-elif text == "🛍️ Buy Telegram Account":
+    elif text == "🛍️ Buy Telegram Account":
     try:
         # # 1. Global Price Rule Configuration
         custom_prices = await get_custom_prices(uid)

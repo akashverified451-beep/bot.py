@@ -375,7 +375,7 @@ async def global_message_handler(event):
             else:
                 detected_country = "United States"
         
-         else:  # 👈 Line 378: Make sure this aligns perfectly with the 'if' on line 371
+        else:  # 👈 Line 378: Make sure this aligns perfectly with the 'if' on line 371
 
                 # Standard international lookup routing matrix
                 for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):

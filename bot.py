@@ -393,38 +393,49 @@ async def global_message_handler(event):
         "604", "613", "639", "647", "705",
         "825", "867", "873", "902", "905"
     ]
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT phone_number FROM available_accounts")
+                all_numbers = await cursor.fetchall()
 
-    async with await get_db_connection() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT ...")
-            all_numbers = await cursor.fetchall()
-
-    inventory = {}
-    for (phone,) in all_numbers:
-        clean_phone = phone.strip()
-
-        if not clean_phone.startswith("+"):
-            clean_phone = "+" + clean_phone
-        detected_country = "Other International"
-
-        # Smart North American parsing rule
-        if clean_phone.startswith("+1") and len(clean_phone) >= 5:
-            area_code = clean_phone[2:5]
-            if area_code in canada_area_codes:
-                detected_country = "Canada"
+        inventory = {}
+        for phone_info in all_numbers:
+            # Handle list or tuple unpacking safely
+            phone = phone_info[0] if isinstance(phone_info, (tuple, list)) else phone_info.get('phone_number') if isinstance(phone_info, dict) else phone_info
+            
+            clean_phone = phone.strip()
+            if not clean_phone.startswith("+"):
+                clean_phone = "+" + clean_phone
+            
+            detected_country = "Other International"
+            
+            # Smart North American parsing rule
+            if clean_phone.startswith("+1") and len(clean_phone) >= 5:
+                area_code = clean_phone[2:5]
+                if area_code in canada_area_codes:
+                    detected_country = "Canada"
+                else:
+                    detected_country = "United States"
             else:
-                detected_country = "United States"
+                # Standard international lookup routine
+                for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                    if clean_phone.startswith(prefix):
+                        detected_country = prefix_to_country[prefix]
+                        break
+            
+            detected_country = detected_country.strip()
+            inventory[detected_country] = inventory.get(detected_country, 0) + 1
 
-        else:
-            # Standard international lookup routine
-            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-                if clean_phone.startswith(prefix):
-                    detected_country = prefix_to_country[prefix]
-                    break
+        # 4. Format and Send the Response Message to the User
+        response_text = "<b>🛍️ Available Telegram Accounts</b>\n\n"
+        for country, count in inventory.items():
+            flag = country_flags.get(country, "🌐")
+            response_text += f"{flag} {country}: {count} available\n"
+            
+        await event.respond(response_text)
+        event.handled = True
+        return
 
-        detected_country = detected_country.strip()
-        inventory[detected_country] = inventory.get(detected_country, 0) + 1
-        
 
         # 6. Initialize storefront table header rows
         tg_services_kb = [

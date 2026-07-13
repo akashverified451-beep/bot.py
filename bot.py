@@ -421,14 +421,14 @@ if text == "💬 Buy Whatsapp OTP":
 # # 7. Handle Promocode Button
 elif text == "🎁 Promocode":
     promo_msg = (
+        "<b>Follow me on Instagram to get...</b>\n"
+        "⬇️ <b>Instagram Profile:</b>\n"
+        "<a href='https://instagram.com...'>...</a>"
+    )
+    await event.respond(promo_msg, parse_mode='html')
+    event.handled = True
+    return
 
-            "<b>Follow me on Instagram to get codes</b>\n"
-            "⬇️ <b>Instagram Profile:</b>\n"
-            "<a href='https://instagram.com'>Click Here</a>"
-        )
-        await event.respond(promo_msg, parse_mode='html')
-        event.handled = True
-        return
 
     # # 8. Handle Support Button with Professional Layout
     elif text == "🆘 Support":

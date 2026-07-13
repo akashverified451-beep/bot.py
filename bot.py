@@ -285,17 +285,18 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-    # --- Admin Stats Command ---    
-    if text.startswith("/stats"):
-      ADMIN_ID = 8393210427
-      if uid != ADMIN_ID:
-          await event.respond("❌ You are not authorized to use this command.")
-          event.handled = True
-          return
 
-      try:
-          async with await get_db_connection() as conn:
-               async with conn.cursor() as cursor:
+     # --- Admin Stats Command ---
+     if text.startswith("/stats"):
+        ADMIN_ID = 8393210427
+        if uid != ADMIN_ID:
+            await event.respond("❌ You are not authorized to use this command.")
+            event.handled = True
+            return
+
+        try:
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
                     # Get total registered users
                     await cursor.execute("SELECT COUNT(*) FROM users")
                     total_users = (await cursor.fetchone())[0]
@@ -319,14 +320,14 @@ async def global_message_handler(event):
 
 
     # 1. Handle /start Command
-    if text.startswith("/start"):
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
-                if not await cursor.fetchone():
-                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    await cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (%s, 0, %s)", (uid, now))
-                    await conn.commit()
+    elif text.startswith("/start"):
+          async with await get_db_connection() as conn:
+              async with conn.cursor() as cursor:
+                  await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
+                  if not await cursor.fetchone():
+                      now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                      await cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (%s, 0, %s)", (uid, now))
+                      await conn.commit()
         await event.respond("👋 Hello! Welcome to SKY OTP Bot.\n\n✨ Use the buttons below to explore our services.", buttons=main_kb())
         event.handled = True
         return

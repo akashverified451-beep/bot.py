@@ -314,18 +314,19 @@ async def global_message_handler(event):
         event.handled = True
         return
     
-    # 4. Handle Back Button
-    elif text == "🔙 Back to Main Menu":
-        await event.respond("👋 Hello! Welcome to SKY OTP Bot.\n\n✨ Use the buttons below to explore our services.", buttons=main_kb())
-        event.handled = True
-        return
+    # # 4. Handle Back Button
+elif text == "🔙 Back to Main Menu":
+    await event.respond("👋 Hello! Welcome...")
+    event.handled = True
+    return
 
-    
-        # 5. Handle Buy Telegram Account Button (Fully Automated Global Dynamic Inventory)
-    elif text == " 🛍️  Buy Telegram Account":
-             # 1. Global Price Rule Configuration Map (Fetched dynamically from database)
-        custom_prices = await get_country_prices()
-        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+
+# # 5. Handle Buy Telegram Account Button
+elif text == "🛍️ Buy Telegram Account":
+    # # 1. Global Price Rule Configuration
+    custom_prices = await get_country_prices()
+    DEFAULT_PRICE = custom_prices.get("DEFAULT")
+
 
     # 2. Automated Country-to-Emoji Flag
         country_flags = {
@@ -431,22 +432,19 @@ elif text == "🎁 Promocode":
 
 # # 8. Handle Support Button with Professional Care
 elif text == "🆘 Support":
+    support_msg = (
+        "✈️ <b>To contact our official support:</b>\n"
+        "📱 <b>Telegram ID:</b> @Sky_Verified\n"
+        "⏰ <b>Working Hours:</b> 10:00 AM to ..."
+    )
+    await event.respond(support_msg, parse_mode='html')
+    event.handled = True
+    return
 
-        support_msg = (
+elif text == "➕ Add Funds":
+    txn = "".join([str(random.randint(0, 9))])
+    claim_id = str(random.randint(1000, 9999))
 
-            "✈️ <b>To contact our official support team, please reach out via the details below:</b>\n\n"
-            "📱 <b>Telegram ID:</b> @Sky_Verified\n"
-            "⏰ <b>Working Hours:</b> 10:00 AM to 10:00 PM"
-        )
-        await event.respond(support_msg, parse_mode='html')
-        event.handled = True
-        return
-
-    
-    # Handle Add Funds Button
-    elif text == "➕ Add Funds":
-        txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
-        claim_id = str(random.randint(1000, 9999))
         
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:

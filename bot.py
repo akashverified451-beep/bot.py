@@ -8,6 +8,7 @@ from datetime import datetime
 import psycopg
 import qrcode
 from telethon import TelegramClient, events, Button
+from telethon.sessions import StringSession
 
 # Set up logging for Render dashboard monitoring
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -20,7 +21,7 @@ API_HASH = os.getenv("API_HASH", "27d91aac298b61038f19ee5c1b1f3f48")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "8393210427"))
 YOUR_UPI_ID = "skyotpprovider@axisbank"
 
-# Database Connection Pool
+# Database Connection URL
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db")
 
 # Initialize Telethon Bot Client Instance using your storage disk path
@@ -32,15 +33,18 @@ async def get_db_connection():
 
 async def init_db():
     """Create required tables asynchronously if they don't exist in PostgreSQL."""
-    async with await get_db_connection() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("CREATE TABLE IF NOT EXISTS users (uid BIGINT PRIMARY KEY, balance INT DEFAULT 0, join_date TEXT)")
-            await cursor.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid BIGINT, txn TEXT, session_amt INT DEFAULT 0)")
-            await cursor.execute("CREATE TABLE IF NOT EXISTS active_orders (phone_number TEXT, uid BIGINT, status TEXT)")
-            await cursor.execute("CREATE TABLE IF NOT EXISTS available_accounts (phone_number TEXT, api_id TEXT, api_hash TEXT, string_session TEXT)")
-            await cursor.execute("CREATE TABLE IF NOT EXISTS country_prices (country TEXT PRIMARY KEY, price NUMERIC)")
-            await conn.commit()
-    logging.info("PostgreSQL structural database tables checked/created successfully.")
+    try:
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("CREATE TABLE IF NOT EXISTS users (uid BIGINT PRIMARY KEY, balance INT DEFAULT 0, join_date TEXT)")
+                await cursor.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid BIGINT, txn TEXT, session_amt INT DEFAULT 0)")
+                await cursor.execute("CREATE TABLE IF NOT EXISTS active_orders (phone_number TEXT, uid BIGINT, status TEXT)")
+                await cursor.execute("CREATE TABLE IF NOT EXISTS available_accounts (phone_number TEXT PRIMARY KEY, api_id TEXT, api_hash TEXT, string_session TEXT)")
+                await cursor.execute("CREATE TABLE IF NOT EXISTS country_prices (country TEXT PRIMARY KEY, price NUMERIC)")
+                await conn.commit()
+        logging.info("PostgreSQL structural database tables checked/created successfully.")
+    except Exception as e:
+        logging.error(f"Error initializing database: {e}")
 
 async def get_country_prices():
     """Fetches real-time custom pricing from the database with hardcoded defaults as fallbacks."""
@@ -61,18 +65,26 @@ async def get_country_prices():
     return defaults
 
 async def get_user_bal(uid):
-    async with await get_db_connection() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
-            row = await cursor.fetchone()
-            return row[0] if row else 0
+    try:
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+    except Exception as e:
+        logging.error(f"Error fetching user balance for {uid}: {e}")
+        return 0
 
 async def get_user_jd(uid):
-    async with await get_db_connection() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT join_date FROM users WHERE uid = %s", (uid,))
-            row = await cursor.fetchone()
-            return row[0] if row else "N/A"
+    try:
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT join_date FROM users WHERE uid = %s", (uid,))
+                row = await cursor.fetchone()
+                return row[0] if row else "N/A"
+    except Exception as e:
+        logging.error(f"Error fetching join date for {uid}: {e}")
+        return "N/A"
 
 # --- Keyboard Builders Matching the Custom Style ---
 def main_kb():
@@ -98,12 +110,29 @@ async def global_message_handler(event):
     uid = event.sender_id
     text = event.text or ""
 
+    # Ensure user exists in database upon active interaction
+    try:
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
+                if not await cursor.fetchone():
+                    join_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    await cursor.execute("INSERT INTO users (uid, balance, join_date) VALUES (%s, 0, %s)", (uid, join_date))
+                    await conn.commit()
+    except Exception as e:
+        logging.error(f"User check-in database error: {e}")
+
     # Admin Stock Adder Command with Integrated Live Price Configuration Matrix
     if text.startswith("/addstock") and uid == ADMIN_TELEGRAM_ID:
         try:
             # Expected formats:
             # OPTION A (With custom price): /addstock phone,api_id,api_hash,session_string,price
             # OPTION B (Keep existing price): /addstock phone,api_id,api_hash,session_string
+            if " " not in text:
+                await event.respond("❌ **Format mismatch!** Use: `/addstock phone,api_id,api_hash,session_string,price`")
+                event.handled = True
+                return
+
             command_args = text.split(" ", 1)[1]
             args_list = command_args.split(",")
             
@@ -117,13 +146,12 @@ async def global_message_handler(event):
             
             # Detect optional trailing pricing variable argument parameter
             set_custom_price = None
-            if len(args_list) == 5:
+            if len(args_list) >= 5:
                 set_custom_price = float(args_list[4].strip())
             
             progress_msg = await event.respond("⏳ **Verifying login credentials against Telegram servers...**")
             
             # 1. Spawn temporary runtime client to validate authentication safety
-            from telethon.sessions import StringSession
             temp_client = TelegramClient(
                 StringSession(session_str), 
                 int(api_id_val), 
@@ -169,7 +197,10 @@ async def global_message_handler(event):
                 async with conn.cursor() as cursor:
                     # Save stock credentials record
                     await cursor.execute(
-                        "INSERT INTO available_accounts (phone_number, api_id, api_hash, string_session) VALUES (%s, %s, %s, %s)",
+                        """INSERT INTO available_accounts (phone_number, api_id, api_hash, string_session) 
+                           VALUES (%s, %s, %s, %s) 
+                           ON CONFLICT (phone_number) DO UPDATE SET 
+                           api_id = EXCLUDED.api_id, api_hash = EXCLUDED.api_hash, string_session = EXCLUDED.string_session""",
                         (phone, api_id_val, api_hash_val, session_str)
                     )
                     
@@ -177,8 +208,8 @@ async def global_message_handler(event):
                     price_note = ""
                     if set_custom_price is not None:
                         await cursor.execute(
-                            "INSERT INTO country_prices (country, price) VALUES (%s, %s) "
-                            "ON CONFLICT (country) DO UPDATE SET price = EXCLUDED.price",
+                            """INSERT INTO country_prices (country, price) VALUES (%s, %s) 
+                               ON CONFLICT (country) DO UPDATE SET price = EXCLUDED.price""",
                             (detected_country, set_custom_price)
                         )
                         price_note = f"\n💰 **Price Auto-Configured:** ₹{set_custom_price:.2f} for {detected_country}"

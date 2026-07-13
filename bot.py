@@ -347,20 +347,21 @@ async def global_message_handler(event):
     }
 
     # List of known Canadian Area Codes
-    canada_area_codes = [
-            "204", "226", "236", "249", "250", "289", "306", "343", "365", "403", "416", "418", 
-            "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "600", 
-            "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819", 
-            "825", "867", "873", "902", "905"
-        ]
+        canada_area_codes = [
+        "204", "226", "236", "249", "250",
+        "431", "437", "438", "450", "506",
+        "604", "613", "639", "647", "705",
+        "825", "867", "873", "902", "905"
+    ]
 
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("SELECT phone_number FROM available_accounts")
-                all_numbers = await cursor.fetchall()
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT...")
+            all_numbers = await cursor.fetchall()
 
-        inventory = {}
-        for (phone,) in all_numbers:
+    inventory = {}
+    for (phone,) in all_numbers:
+
             clean_phone = phone.strip()
             if not clean_phone.startswith("+"):
                 clean_phone = "+" + clean_phone

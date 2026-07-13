@@ -333,7 +333,8 @@ async def global_message_handler(event):
             "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
             "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹", "Egypt": "🇪🇬",
             "Iran": "🇮🇷", "Pakistan": "🇵🇰", "Indonesia": "🇮🇩", "Kenya": "🇰🇪",
-            "Chile": "🇨🇱", "Togo": "🇹🇬", "Angola": "🇦🇴", "Japan": "🇯🇵", "Nepal": "🇳🇵"
+            "Chile": "🇨🇱", "Togo": "🇹🇬", "Angola": "🇦🇴", "Japan": "🇯🇵", "Nepal": "🇳🇵", "Myanmar": "🇲🇲"
+
         }
 
         # 3. Dynamic Phone Prefix Map Identifier Matrix
@@ -341,7 +342,8 @@ async def global_message_handler(event):
             "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
             "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
             "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
-            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
+            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal", "+95": "Myanmar"
+
         }
 
         # List of known Canadian Area Codes to differentiate from the US

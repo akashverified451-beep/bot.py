@@ -361,73 +361,70 @@ async def global_message_handler(event):
         return
 
     
-    # 5. Handle Buy Telegram Account Button (Fully Automated Global Dynamic Inventory)
-    elif "Buy Telegram Account" in text:
-        custom_prices = await get_country_prices()
-        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+    # # 5. Handle Buy Telegram Account Button
+elif text == "🛍️ Buy Telegram Account":
+    # # 1. Global Price Rule Configuration
+    custom_prices = await get_country_prices()
+    DEFAULT_PRICE = custom_prices.get("DEFAULT")
 
-       
-        # 2. Automated Country-to-Emoji Flag Reference Engine
+
+    # 2. Automated Country-to-Emoji Flag
         country_flags = {
-            "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
-            "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹", "Egypt": "🇪🇬",
-            "Iran": "🇮🇷", "Pakistan": "🇵🇰", "Indonesia": "🇮🇩", "Kenya": "🇰🇪",
-            "Chile": "🇨🇱", "Togo": "🇹🇬", "Angola": "🇦🇴", "Japan": "🇯🇵", "Nepal": "🇳🇵", "Myanmar": "🇲🇲", "Afghanistan": "🇦🇫"
-        }
+        "Colombia": "🇨🇴", "Nigeria": "🇳🇬",
+        "United States": "🇺🇸", "India": "🇮🇳",
+        "Iran": "🇮🇷", "Pakistan": "🇵🇰",
+        "Chile": "🇨🇱", "Togo": "🇹🇬",
+        "Myanmar": "🇲🇲"
+    }
 
-        # 3. Dynamic Phone Prefix Map Identifier Matrix
+    # 3. Dynamic Phone Prefix Map Identification
         prefix_to_country = {
-            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
-            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
-            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
-            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal", "+95": "Myanmar", "+93": "Afghanistan"
+        "+57": "Colombia", "+234": "Nigeria",
+        "+91": "India", "+251": "Ethiopia",
+        "+92": "Pakistan", "+62": "Indonesia",
+        "+56": "Chile", "+228": "Togo",
+        "+95": "Myanmar"
+    }
 
+    # List of known Canadian Area Codes
+    canada_area_codes = [
+        "204", "226", "236", "249", "250",
+        "431", "437", "438", "450", "506",
+        "604", "613", "639", "647", "705",
+        "825", "867", "873", "902", "905"
+    ]
 
-        }
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT ...")
+            all_numbers = await cursor.fetchall()
 
-        # List of known Canadian Area Codes to differentiate from the US
-        canada_area_codes = [
-            "204", "226", "236", "249", "250", "289", "306", "343", "365", "403", "416", "418", 
-            "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "600", 
-            "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819", 
-            "825", "867", "873", "902", "905"
-        ]
+    inventory = {}
+    for (phone,) in all_numbers:
+        clean_phone = phone.strip()
 
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("UPDATE available_accounts SET country = 'Afghanistan' WHERE phone_number LIKE '+93%'")
-                await cursor.execute("UPDATE available_accounts SET country = 'Myanmar' WHERE phone_number LIKE '+95%'")
-                await conn.commit()
-                await cursor.execute("SELECT phone_number FROM available_accounts")
-                raw_data = await cursor.fetchall()
-              # This safely converts any format (tuple or dict) into a clean string list
-                all_numbers = [r[0] if isinstance(r, (tuple, list)) else r.get('phone_number') if isinstance(r, dict) else str(r) for r in raw_data] if raw_data else []
+        if not clean_phone.startswith("+"):
+            clean_phone = "+" + clean_phone
+        detected_country = "Other International"
 
-
-        inventory = {}
-        for phone in all_numbers:
-            clean_phone = phone.strip()
-            if not clean_phone.startswith("+"):
-                clean_phone = "+" + clean_phone
-                
-            detected_country = "Other International"
-            
-            # Smart North American parsing rule (+1 split)
-            if clean_phone.startswith("+1") and len(clean_phone) >= 5:
-                area_code = clean_phone[2:5]
-                if area_code in canada_area_codes:
-                    detected_country = "Canada"
-                else:
-                    detected_country = "United States"
+        # Smart North American parsing rule
+        if clean_phone.startswith("+1") and len(clean_phone) >= 5:
+            area_code = clean_phone[2:5]
+            if area_code in canada_area_codes:
+                detected_country = "Canada"
             else:
-                # Standard international lookup routing matrix
-                for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-                    if clean_phone.startswith(prefix):
-                        detected_country = prefix_to_country[prefix]
-                        break
-            
-            detected_country = detected_country.strip()
-            inventory[detected_country] = inventory.get(detected_country, 0) + 1
+                detected_country = "United States"
+
+        else:
+            # Standard international lookup routine
+            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                if clean_phone.startswith(prefix):
+                    detected_country = prefix_to_country[prefix]
+                    break
+
+        detected_country = detected_country.strip()
+        inventory[detected_country] = inventory.get(detected_country, 0) + 1
+        
 
         # 6. Initialize storefront table header rows
         tg_services_kb = [

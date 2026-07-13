@@ -399,16 +399,19 @@ async def global_message_handler(event):
                 all_numbers = await cursor.fetchall()
 
         inventory = {}
-        for phone_info in all_numbers:
-            # Safely extract phone string depending on DB format (tuple or dict or raw string)
-            if isinstance(phone_info, (tuple, list)) and len(phone_info) > 0:
-                phone = phone_info[0]
-            elif isinstance(phone_info, dict):
-                phone = phone_info.get('phone_number', '')
+        for row in all_numbers:
+            # Safely unpack the phone number regardless of database return format
+            if isinstance(row, (tuple, list)):
+                phone = str(row[0]) if len(row) > 0 else ""
+            elif isinstance(row, dict):
+                phone = str(row.get('phone_number', ''))
             else:
-                phone = str(phone_info)
-            
+                phone = str(row)
+                
             clean_phone = phone.strip()
+            if not clean_phone:
+                continue # Skip blank rows safely
+                
             if not clean_phone.startswith("+"):
                 clean_phone = "+" + clean_phone
             
@@ -436,7 +439,7 @@ async def global_message_handler(event):
         for country, count in inventory.items():
             flag = country_flags.get(country, "🌐")
             response_text += f"{flag} {country}: {count} available\n"
-            
+
         await event.respond(response_text)
         event.handled = True
         return

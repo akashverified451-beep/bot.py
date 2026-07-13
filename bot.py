@@ -322,8 +322,8 @@ async def global_message_handler(event):
 
     
         # 5. Handle Buy Telegram Account Button (Fully Automated Global Dynamic Inventory)
-    elif text == "🛍️ Buy Telegram Account":
-                # 1. Global Price Rule Configuration Map (Fetched dynamically from database)
+    elif text == " 🛍️  Buy Telegram Account":
+             # 1. Global Price Rule Configuration Map (Fetched dynamically from database)
         custom_prices = await get_country_prices()
         DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
 
@@ -412,17 +412,16 @@ async def global_message_handler(event):
         event.handled = True
         return
 
+# # 6. Handle Buy Whatsapp OTP Button
+if text == "💬 Buy Whatsapp OTP":
+    await event.respond("💥 <b>Live Whatsapp OTP Service...</b>")
+    event.handled = True
+    return
 
-      
-    # # 6. Handle Buy Whatsapp OTP Button
-    if text == "🔍 Buy Whatsapp OTP":
-        await event.respond("💥 <b>Live Whatsapp OTP Service</b>")
-        event.handled = True
-        return
+# # 7. Handle Promocode Button
+elif text == "🎁 Promocode":
+    promo_msg = (
 
-    # # 7. Handle Promocode Button
-    elif text == "🎁 Promocode":
-        promo_msg = (
             "<b>Follow me on Instagram to get codes</b>\n"
             "⬇️ <b>Instagram Profile:</b>\n"
             "<a href='https://instagram.com'>Click Here</a>"

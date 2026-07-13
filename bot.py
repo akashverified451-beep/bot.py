@@ -329,20 +329,23 @@ async def global_message_handler(event):
 
        
         # 2. Automated Country-to-Emoji Flag Reference Engine
-        country_flags = {
-            "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
-            "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹", "Egypt": "🇪🇬",
-            "Iran": "🇮🇷", "Pakistan": "🇵🇰", "Indonesia": "🇮🇩", "Kenya": "🇰🇪",
-            "Chile": "🇨🇱", "Togo": "🇹🇬", "Angola": "🇦🇴", "Japan": "🇯🇵", "Nepal": "🇳🇵"
-        }
+    country_flags = {
+        "Colombia": "🇨🇴", "Nigeria": "🇳🇬",
+        "United States": "🇺🇸", "India": "🇮🇳",
+        "Iran": "🇮🇷", "Pakistan": "🇵🇰",
+        "Chile": "🇨🇱", "Togo": "🇹🇬",
+        "Myanmar": "🇲🇲"
+    }
 
         # 3. Dynamic Phone Prefix Map Identifier Matrix
-        prefix_to_country = {
-            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
-            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
-            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
-            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
-        }
+    prefix_to_country = {
+        "+57": "Colombia", "+234": "Nigeria",
+        "+91": "India", "+251": "Ethiopia",
+        "+92": "Pakistan", "+62": "Indonesia",
+        "+56": "Chile", "+228": "Togo",
+        "+95": "Myanmar"
+    }
+
 
         # List of known Canadian Area Codes to differentiate from the US
         canada_area_codes = [

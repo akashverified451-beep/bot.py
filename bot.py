@@ -358,9 +358,8 @@ async def global_message_handler(event):
         async with conn.cursor() as cursor:
             await cursor.execute("SELECT...")
             all_numbers = await cursor.fetchall()
-
-    inventory = {}
-    for (phone,) in all_numbers:
+            inventory = {}
+            for (phone,) in all_numbers:
 
             clean_phone = phone.strip()
             if not clean_phone.startswith("+"):

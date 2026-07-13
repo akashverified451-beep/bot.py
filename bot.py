@@ -414,27 +414,27 @@ async def global_message_handler(event):
 
 
       
-# # 6. Handle Buy Whatsapp OTP Button
-if text == "🔍 Buy Whatsapp OTP":
-        await event.respond("💥 <b>Live Whatsapp OTP Service</b>\nChoose an option below:")
-   event.handled = True
-   return
-
-# # 7. Handle Promocode Button
-elif text == "🎁 Promocode":
-
-      promo_msg = (
-            "<b>Follow me on Instagram to get exclusive promo codes:</b>\n\n"
-            "⬇️ <b>Instagram Profile:</b>\n"
-            "<a href='https://instagram.com'>@akash.verified</a>"
-        )
-        await event.respond(promo_msg, parse_mode='html', link_preview=False)
+    # # 6. Handle Buy Whatsapp OTP Button
+    if text == "🔍 Buy Whatsapp OTP":
+        await event.respond("💥 <b>Live Whatsapp OTP Service</b>")
         event.handled = True
         return
 
-    # 8. Handle Support Button with Professional Text
+    # # 7. Handle Promocode Button
+    elif text == "🎁 Promocode":
+        promo_msg = (
+            "<b>Follow me on Instagram to get codes</b>\n"
+            "⬇️ <b>Instagram Profile:</b>\n"
+            "<a href='https://instagram.com'>Click Here</a>"
+        )
+        await event.respond(promo_msg, parse_mode='html')
+        event.handled = True
+        return
+
+    # # 8. Handle Support Button with Professional Layout
     elif text == "🆘 Support":
         support_msg = (
+
             "✈️ <b>To contact our official support team, please reach out via the details below:</b>\n\n"
             "📱 <b>Telegram ID:</b> @Sky_Verified\n"
             "⏰ <b>Working Hours:</b> 10:00 AM to 10:00 PM"

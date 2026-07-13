@@ -431,39 +431,39 @@ async def global_message_handler(event):
             detected_country = detected_country.strip()
             inventory[detected_country] = inventory.get(detected_country, 0) + 1
 
-        # 4. Format the Response Message Text
-        response_text = "<b>🛍️ Available Telegram Accounts</b>\n\n"
-        for country, count in inventory.items():
-            flag = country_flags.get(country, "🌐")
-            response_text += f"{flag} {country}: {count} available\n"
+    # # 4. Format the Response Message Text
+    response_text = "<b>🏪 Available Telegram Accounts</b>\n\n"
+    for country, count in inventory.items():
+        flag = country_flags.get(country, "🌐")
+        response_text += f"{flag} {country}: {count} available\n"
 
-        # 6. Initialize storefront table header rows
-        tg_services_kb = [
-            [
-                Button.inline("🌐 Country", data="lbl"),
-                Button.inline("💵 Price", data="lbl"),
-                Button.inline("📦 Stock", data="lbl"),
-            ]
+    # # 6. Initialize storefront table header rows
+    tg_services_kb = [
+        [
+            Button.inline("🌐 Country", data="lbl"),
+            Button.inline("💵 Price", data="lbl"),
+            Button.inline("📈 Stock", data="lbl"),
         ]
+    ]
 
-        # 7. Dynamically generate rows ordered by available inventory sizing
-        for country_name, stock_qty in inventory.items():
-            flag = country_flags.get(country_name, "🌐")
-            price = custom_prices.get(country_name, DEFAULT_PRICE)
-            
-            callback_payload = f"buy_tg_{country_name}"
-            
-            country_row = [
-                Button.inline(f"{flag} {country_name}", data=callback_payload),
-                Button.inline(f"💵 {price}", data=callback_payload),
-                Button.inline(f"{stock_qty} ✅", data=callback_payload)
-            ]
-            tg_services_kb.append(country_row)
+    # # 7. Dynamically generate rows ordered by available inventory sizing
+    for country_name, stock_qty in inventory.items():
+        flag = country_flags.get(country_name, "🌐")
+        price = custom_prices.get(country_name, DEFAULT_PRICE)
 
-        # Send both the text overview and the interactive button grid together
-        await event.respond(response_text, buttons=tg_services_kb)
-        event.handled = True
-        return
+        callback_payload = f"buy_tg_{country_name}"
+
+        country_row = [
+            Button.inline(f"{flag} {country_name}", data=callback_payload),
+            Button.inline(f"💵 {price}", data=callback_payload),
+            Button.inline(f"{stock_qty} ☑️", data=callback_payload),
+        ]
+        tg_services_kb.append(country_row)
+
+    # # Send both the text overview and the interactive button grid together
+    await event.respond(response_text, buttons=tg_services_kb)
+    event.handled = True
+    return
 
       
   # 6. Handle Buy Whatsapp OTP Button

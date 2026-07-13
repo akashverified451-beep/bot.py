@@ -338,7 +338,7 @@ async def global_message_handler(event):
     }
 
     # 3. Dynamic Phone Prefix Map Identification
-    prefix_to_country = {
+       prefix_to_country = {
         "+57": "Colombia", "+234": "Nigeria",
         "+91": "India", "+251": "Ethiopia",
         "+92": "Pakistan", "+62": "Indonesia",
@@ -347,7 +347,7 @@ async def global_message_handler(event):
     }
 
     # List of known Canadian Area Codes
-        canada_area_codes = [
+       canada_area_codes = [
         "204", "226", "236", "249", "250",
         "431", "437", "438", "450", "506",
         "604", "613", "639", "647", "705",

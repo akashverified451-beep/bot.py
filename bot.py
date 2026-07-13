@@ -226,10 +226,17 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-        # Admin Quick Price Modifier Command
+
+
+    # Admin Quick Price Modifier Command
     if text.startswith("/updateprice") and uid == ADMIN_TELEGRAM_ID:
         try:
             # Expected format: /updateprice CountryName,Price
+            if " " not in text:
+                await event.respond("❌ **Format Error!** Use:\n`/updateprice CountryName,Price`\n\nExample: `/updateprice India,48`")
+                event.handled = True
+                return
+
             command_args = text.split(" ", 1)[1]
             country_param, price_param = command_args.split(",")
             
@@ -239,19 +246,19 @@ async def global_message_handler(event):
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
                     await cursor.execute(
-                        "INSERT INTO country_prices (country, price) VALUES (%s, %s) "
-                        "ON CONFLICT (country) DO UPDATE SET price = EXCLUDED.price",
+                        """INSERT INTO country_prices (country, price) VALUES (%s, %s) 
+                           ON CONFLICT (country) DO UPDATE SET price = EXCLUDED.price""",
                         (target_country, new_price)
                     )
                     await conn.commit()
             
             await event.respond(f"💰 **Live Price Updated!**\n\n🌍 Country: **{target_country}**\n💵 New Price: **₹{new_price:.2f}**\n\n*All current and future stock for this country will use this price instantly.*")
         except Exception as e:
+            logging.error(f"Updateprice command error: {e}")
             await event.respond(f"❌ **Format Error!** Use:\n`/updateprice CountryName,Price`\n\nExample: `/updateprice India,48`")
         event.handled = True
         return
 
-        
     # Admin Stock Verification & Cleanup Engine
     if text.startswith("/cleanstock") and uid == ADMIN_TELEGRAM_ID:
         try:
@@ -273,7 +280,12 @@ async def global_message_handler(event):
             
             for phone, api_id, api_hash, session_str in all_stock:
                 checked_count += 1
-                await status_msg.edit(f"⏳ Checking account {checked_count}/{len(all_stock)} (`{phone}`)...")
+                # Update status message occasionally to avoid rate limiting
+                if checked_count % 3 == 0 or checked_count == len(all_stock):
+                    try:
+                        await status_msg.edit(f"⏳ Checking account {checked_count}/{len(all_stock)} (`{phone}`)...")
+                    except Exception:
+                        pass # Ignore temporary Telegram UI glitches
                 
                 temp_client = TelegramClient(
                     StringSession(session_str.strip()), 
@@ -286,7 +298,8 @@ async def global_message_handler(event):
                 try:
                     await temp_client.connect()
                     is_valid = await temp_client.is_user_authorized()
-                except Exception:
+                except Exception as check_err:
+                    logging.warning(f"Error checking session for {phone}: {check_err}")
                     is_valid = False
                 finally:
                     await temp_client.disconnect()
@@ -298,8 +311,8 @@ async def global_message_handler(event):
             if dead_accounts:
                 async with await get_db_connection() as conn:
                     async with conn.cursor() as cursor:
-                        for phone in dead_accounts:
-                            await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone,))
+                        for phone_to_delete in dead_accounts:
+                            await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_delete,))
                         await conn.commit()
                 
                 await status_msg.edit(
@@ -312,9 +325,11 @@ async def global_message_handler(event):
                 await status_msg.edit(f"✨ **All clean!** All `{len(all_stock)}` accounts in your database are 100% valid and working.")
                 
         except Exception as e:
+            logging.error(f"Cleanup processing error: {e}")
             await event.respond(f"❌ **Cleanup Error:** {e}")
         event.handled = True
         return
+
 
 
  # 1. Handle /start Command
@@ -566,73 +581,75 @@ async def admin_add_click(event):
     updated_text = f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{new_session_amt}"
     await event.edit(updated_text, buttons=akb, parse_mode='html')
 
-
 # --- 2. FIXED CONFIRM & SEND BUTTON HANDLER ---
 @bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"send:")))
 async def admin_send_receipt_click(event):
     if event.sender_id != ADMIN_TELEGRAM_ID:
         return
         
-    await event.answer()  # Stops the loading spinner instantly
-    data_str = event.data.decode('utf-8')
-    _, claim_id = data_str.split(":")
-    
-    async with await get_db_connection() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = %s", (str(claim_id),))
-            row = await cursor.fetchone()
-            
-            if not row:
-                await event.edit("❌ Already closed or claim not found.")
-                return
-                
-            # ✅ FIXED: Using identical correct indexing matching the add handler
-            uid = row[0]
-            txn = row[1]
-            session_amt = row[2]
-            
-            # Remove completed claim tracking log entry
-            await cursor.execute("DELETE FROM claims WHERE claim_id = %s", (str(claim_id),))
-            await conn.commit()
-
-    # Inform the user and complete the admin view update
     try:
-        await bot.send_message(entity=uid, message=f"✅ <b>Deposit Confirmed!</b>\n\n💰 ₹{session_amt} has been successfully added to your wallet balance.", parse_mode='html')
-        await event.edit(f"✅ Approved and sent ₹{session_amt} to user <code>{uid}</code>", parse_mode='html')
-    except Exception as e:
-        logging.error(f"Failed to send confirmation message to user: {e}")
-        await event.edit(f"✅ Approved in DB, but couldn't message user. Amount: ₹{session_amt}", parse_mode='html')
+        await event.answer()  # Stops the loading spinner instantly
+        data_str = event.data.decode('utf-8')
+        _, claim_id = data_str.split(":")
+        
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = %s", (str(claim_id),))
+                row = await cursor.fetchone()
+                
+                if not row:
+                    await event.edit("❌ Already closed or claim not found.")
+                    return
+                    
+                uid = row[0]
+                txn = row[1]
+                session_amt = row[2]
+                
+                # Remove completed claim tracking log entry
+                await cursor.execute("DELETE FROM claims WHERE claim_id = %s", (str(claim_id),))
+                await conn.commit()
+
+        # Inform the user and complete the admin view update
+        try:
+            await bot.send_message(entity=uid, message=f"✅ <b>Deposit Confirmed!</b>\n\n💰 ₹{session_amt} has been successfully added to your wallet balance.", parse_mode='html')
+            await event.edit(f"✅ Approved and sent ₹{session_amt} to user <code>{uid}</code>", parse_mode='html')
+        except Exception as e:
+            logging.error(f"Failed to send confirmation message to user: {e}")
+            await event.edit(f"✅ Approved in DB, but couldn't message user. Amount: ₹{session_amt}", parse_mode='html')
+    except Exception as general_err:
+        logging.error(f"Admin confirmation process error: {general_err}")
 
 # --- 3. FIXED CANCEL & DENY BUTTON HANDLER ---
 @bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"deny:") or d.startswith(b"cancel:")))
 async def cancel_or_deny_click(event):
-    await event.answer()  # Stops the loading spinner instantly
-    
-    data_str = event.data.decode('utf-8')
-    
-    if ":" in data_str:
-        action, claim_id = data_str.split(":", 1)
-    else:
-        await event.edit("❌ This request data structure is broken.")
-        return
-    
-    async with await get_db_connection() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("DELETE FROM claims WHERE claim_id = %s", (str(claim_id),))
-            await conn.commit()
-            await event.edit("❌ Request has been processed")
-
-  
-# Send dynamic PNG buffer directly over
-    await bot.send_file(
-        event.chat_id,
-        image_stream,
-        caption=deposit_instruction,
-        parse_mode='html'
-    )
-    event.handled = True
-    return
-
+    try:
+        await event.answer()  # Stops the loading spinner instantly
+        data_str = event.data.decode('utf-8')
+        
+        if ":" in data_str:
+            action, claim_id = data_str.split(":", 1)
+        else:
+            await event.edit("❌ This request data structure is broken.")
+            return
+        
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                # Fetch user details to optionally notify them before record purging
+                await cursor.execute("SELECT uid FROM claims WHERE claim_id = %s", (str(claim_id),))
+                row = await cursor.fetchone()
+                
+                await cursor.execute("DELETE FROM claims WHERE claim_id = %s", (str(claim_id),))
+                await conn.commit()
+                
+                if action == "deny" and row:
+                    try:
+                        await bot.send_message(entity=row[0], message="❌ **Deposit Rejected:** Your payment screenshot verification failed or was declined by the administrator.")
+                    except Exception:
+                        pass
+                        
+            await event.edit(f"❌ Request [{claim_id}] has been processed and removed.")
+    except Exception as e:
+        logging.error(f"Error processing cancel/deny runtime actions: {e}")
 
 # --- Complete High-Speed Error-Free Callback Query Handler ---
 @bot.on(events.CallbackQuery)
@@ -644,182 +661,226 @@ async def callback_handler(event):
         await event.answer()
         return
 
-        # # 1. First Step: User clicks a country purchase button
+    # # 1. First Step: User clicks a country purchase button
     if data.startswith("buy_tg_"):
-        await event.answer("Validating warehouse stock pipeline...", alert=False)
-        target_country = data.replace("buy_tg_", "").strip()
-        
-        # Fetch live database prices dynamically instead of hardcoding
-        custom_prices = await get_country_prices()
-        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
-        
-        country_flags = {
-            "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
-            "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
-        }
-        
-        prefix_to_country = {
-            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
-            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
-            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
-            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
-        }
+        try:
+            await event.answer("Validating warehouse stock pipeline...", alert=False)
+            target_slug = data.replace("buy_tg_", "").strip()
+            
+            # Fetch live database prices dynamically instead of hardcoding
+            custom_prices = await get_country_prices()
+            DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+            
+            country_flags = {
+                "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
+                "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
+            }
+            
+            prefix_to_country = {
+                "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
+                "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
+                "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
+                "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
+            }
 
-        canada_area_codes = [
-            "204", "226", "236", "249", "250", "289", "306", "343", "365", "403", "416", "418", 
-            "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "600", 
-            "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819", 
-            "825", "867", "873", "902", "905"
-        ]
+            canada_area_codes = [
+                "204", "226", "236", "249", "250", "289", "306", "343", "365", "403", "416", "418", 
+                "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "600", 
+                "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819", 
+                "825", "867", "873", "902", "905"
+            ]
 
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts")
-                all_stock = await cursor.fetchall()
-                
-                selected_account = None
-                for phone, api_id, api_hash, session_str in all_stock:
-                    clean_phone = phone.strip()
-                    if not clean_phone.startswith("+"):
-                        clean_phone = "+" + clean_phone
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts")
+                    all_stock = await cursor.fetchall()
                     
-                    if clean_phone.startswith("+1") and len(clean_phone) >= 5:
-                        area_code = clean_phone[2:5]
-                        account_country = "Canada" if area_code in canada_area_codes else "United States"
-                    else:
-                        account_country = "Other International"
-                        for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-                            if clean_phone.startswith(prefix):
-                                account_country = prefix_to_country[prefix]
-                                break
+                    selected_account = None
+                    detected_country_name = "Other International"
                     
-                    if account_country.strip() == target_country:
-                        selected_account = (phone, session_str)
-                        break
-                
-                if not selected_account:
-                    await event.respond(f"⚠️ **Out of Stock!** No available numbers match your request for **{target_country}**.")
-                    return
-                
-                phone_to_buy, session_to_buy = selected_account
-                
-                await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
-                await cursor.execute(
-                    "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
-                    (phone_to_buy, uid, "PENDING_OTP")
-                )
-                await conn.commit()
+                    for phone, api_id, api_hash, session_str in all_stock:
+                        clean_phone = phone.strip()
+                        if not clean_phone.startswith("+"):
+                            clean_phone = "+" + clean_phone
+                        
+                        if clean_phone.startswith("+1") and len(clean_phone) >= 5:
+                            area_code = clean_phone[2:5]
+                            account_country = "Canada" if area_code in canada_area_codes else "United States"
+                        else:
+                            account_country = "Other International"
+                            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                                if clean_phone.startswith(prefix):
+                                    account_country = prefix_to_country[prefix]
+                                    break
+                        
+                        # Match slug strings correctly matching the storefront payload mutations
+                        current_slug = account_country.lower().replace(" ", "_")[:20]
+                        if current_slug == target_slug:
+                            selected_account = (phone, api_id, api_hash, session_str)
+                            detected_country_name = account_country
+                            break
+                    
+                    if not selected_account:
+                        await event.respond("⚠️ **Out of Stock!** No available numbers match your requested country target group.")
+                        return
+                    
+                    phone_to_buy, api_id_to_buy, api_hash_to_buy, session_to_buy = selected_account
+                    
+                    # Check balance check loops to make sure users can buy accounts cleanly
+                    display_price = custom_prices.get(detected_country_name, DEFAULT_PRICE)
+                    await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
+                    bal_row = await cursor.fetchone()
+                    user_bal = bal_row[0] if bal_row else 0
+                    
+                    if user_bal < display_price:
+                        await event.respond(f"❌ **Insufficient Funds!**\n\nThis account costs **₹{display_price:.2f}**, but your wallet only holds **₹{user_bal:.2f}**.\n\nPlease top up your funds first.")
+                        return
+                    
+                    # Deduct balance and update tables cleanly
+                    await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
+                    await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
+                    
+                    # Packaging connection components safely into the data rows string variable parameter
+                    bundled_meta = f"{api_id_to_buy}|{api_hash_to_buy}|{session_to_buy}"
+                    await cursor.execute(
+                        "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
+                        (phone_to_buy, uid, bundled_meta)
+                    )
+                    await conn.commit()
 
-        display_flag = country_flags.get(target_country, "🌐")
-        display_price = custom_prices.get(target_country, DEFAULT_PRICE)
-
-        success_msg = (
-            f"✅ **Number reserved successfully**\n\n"
-            f"📞 **Phone:** `{phone_to_buy}`\n"
-            f"🌍 **Country:** {target_country} {display_flag}\n"
-            f"💰 **Price:** ₹{display_price:.1f}\n\n"
-            f"🌟 **Note:** Number cannot be cancelled because OTP Delivery is guaranteed!"
-        )
-        
-        await event.respond(success_msg, buttons=[[Button.inline("✉️ Check OTP", data=f"checkotp:{phone_to_buy}")]])
+            display_flag = country_flags.get(detected_country_name, "🌐")
+            success_msg = (
+                f"✅ **Number reserved successfully**\n\n"
+                f"📞 **Phone:** `{phone_to_buy}`\n"
+                f"🌍 **Country:** {detected_country_name} {display_flag}\n"
+                f"💰 **Price:** ₹{display_price:.2f}\n\n"
+                f"🌟 **Note:** Your account reservation is active. Use the button below to check your dynamic inbox updates!"
+            )
+            
+            await event.respond(success_msg, buttons=[[Button.inline("✉️ Check OTP", data=f"checkotp:{phone_to_buy}")]])
+        except Exception as e:
+            logging.error(f"Error during storefront purchase handler: {e}")
+            await event.respond("❌ An error occurred while processing your selection request.")
         return
+
 
         # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):
-        _, target_phone = data.split(":")
-        target_phone = target_phone.strip()
-        
-        await event.answer("🔄 Scanning account inbox instantly...", alert=False)
-        
-        api_id_val = None
-        api_hash_val = None
-        session_str_val = None
-        
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                # Query active_orders table to fetch backup key details securely
-                await cursor.execute(
-                    "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", 
-                    (target_phone, uid)
-                )
-                row = await cursor.fetchone()
-                if row and row[0]:
-                    try:
-                        api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
-                    except ValueError:
-                        pass
+        try:
+            _, target_phone = data.split(":")
+            target_phone = target_phone.strip()
+            
+            await event.answer("🔄 Scanning account inbox instantly...", alert=False)
+            
+            api_id_val = None
+            api_hash_val = None
+            session_str_val = None
+            
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    # Query active_orders table to fetch backup key details securely
+                    await cursor.execute(
+                        "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", 
+                        (target_phone, uid)
+                    )
+                    row = await cursor.fetchone()
+                    if row and row[0]:
+                        try:
+                            api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
+                        except ValueError:
+                            pass
 
-        fetched_otp = "⏳ NO LIVE SMS FOUND YET"
+            fetched_otp = "⏳ NO LIVE SMS FOUND YET"
 
-        if session_str_val:
-            try:
-                from telethon.sessions import StringSession
-                
-                temp_client = TelegramClient(
-                    StringSession(session_str_val), 
-                    int(api_id_val), 
-                    api_hash_val,
-                    connection_retries=1,
-                    retry_delay=1
-                )
-                
-                # Fast connection timeout constraint
-                await asyncio.wait_for(temp_client.connect(), timeout=4.0)
-                
-                if await temp_client.is_user_authorized():
-                    # Scan exclusively the official Telegram notifications user profile
-                    async for msg in temp_client.iter_messages(777000, limit=1):
-                        if msg.text:
-                            otp_match = re.search(r'\b\d{5,6}\b', msg.text)
-                            if otp_match:
-                                fetched_otp = otp_match.group(0)
-                            else:
-                                fetched_otp = msg.text[:40]
-                else:
-                    fetched_otp = "❌ SESSION EXPIRED / TERMINATED"
+            if session_str_val:
+                temp_client = None
+                try:
+                    from telethon.sessions import StringSession
                     
-            except Exception as e:
-                logging.error(f"Instant Live Check Fault: {e}")
-                fetched_otp = "⏳ NO LIVE SMS FOUND YET"
-                
-            finally:
-                if 'temp_client' in locals() and temp_client.is_connected():
-                    await temp_client.disconnect()
+                    temp_client = TelegramClient(
+                        StringSession(session_str_val.strip()), 
+                        int(api_id_val.strip()), 
+                        api_hash_val.strip(),
+                        connection_retries=1,
+                        retry_delay=1
+                    )
+                    
+                    # Fast connection timeout constraint
+                    await asyncio.wait_for(temp_client.connect(), timeout=4.0)
+                    
+                    if await temp_client.is_user_authorized():
+                        # Scan exclusively the official Telegram notifications user profile
+                        async for msg in temp_client.iter_messages(777000, limit=1):
+                            if msg.text:
+                                otp_match = re.search(r'\b\d{5,6}\b', msg.text)
+                                if otp_match:
+                                    fetched_otp = otp_match.group(0)
+                                else:
+                                    # Clean and format plain text snippets safely
+                                    fetched_otp = msg.text[:40].replace('\n', ' ').strip()
+                    else:
+                        fetched_otp = "❌ SESSION EXPIRED / TERMINATED"
+                        
+                except Exception as e:
+                    logging.error(f"Instant Live Check Fault: {e}")
+                    fetched_otp = "⏳ NO LIVE SMS FOUND YET"
+                    
+                finally:
+                    if temp_client is not None:
+                        try:
+                            if temp_client.is_connected():
+                                await temp_client.disconnect()
+                        except Exception:
+                            pass
 
-        # 1. Dynamically read global price entries and country matching settings
-        custom_prices = await get_country_prices()
-        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
-        
-        country_flags = {
-            "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
-            "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
-        }
-        
-        prefix_to_country = {
-            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
-            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
-            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
-            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
-        }
+            # 1. Dynamically read global price entries and country matching settings
+            custom_prices = await get_country_prices()
+            DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+            
+            country_flags = {
+                "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
+                "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
+            }
+            
+            prefix_to_country = {
+                "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
+                "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
+                "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
+                "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
+            }
 
-        # 2. Extract country metadata matching the active phone string selection
-        detected_country = "Other International"
-        for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-            if target_phone.startswith(prefix):
-                detected_country = prefix_to_country[prefix]
-                break
+            # 2. Extract country metadata matching the active phone string selection
+            clean_phone_check = target_phone
+            if not clean_phone_check.startswith("+"):
+                clean_phone_check = "+" + clean_phone_check
 
-        display_flag = country_flags.get(detected_country, "🌐")
-        display_price = custom_prices.get(detected_country, DEFAULT_PRICE)
+            detected_country = "Other International"
+            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                if clean_phone_check.startswith(prefix):
+                    detected_country = prefix_to_country[prefix]
+                    break
 
-        # 3. Dynamic layout structures display accurate metrics seamlessly
-        custom_otp_message = (
-            f"{display_flag} **{detected_country}**   ₹{display_price:.1f}   ✅\n\n"
-            f"📞 **Phone Number:** `{target_phone}`\n"
-            f"📩 **OTP:** **`{fetched_otp}`**\n\n"
-            f"⚠️ **Note:** The Re-Request button is active for 24 hours. "
-            f"After that, you'll need to request a new number."
-        )
+            display_flag = country_flags.get(detected_country, "🌐")
+            display_price = custom_prices.get(detected_country, DEFAULT_PRICE)
+
+            # 3. Dynamic layout structures display accurate metrics seamlessly
+            custom_otp_message = (
+                f"{display_flag} **{detected_country}**   ₹{display_price:.1f}   ✅\n\n"
+                f"📞 **Phone Number:** `{target_phone}`\n"
+                f"📩 **OTP:** **`{fetched_otp}`**\n\n"
+                f"⚠️ **Note:** The Re-Request button is active for 24 hours. "
+                f"After that, you'll need to request a new number."
+            )
+            
+            # Use respond or edit safely to update the UI framework screen directly
+            await event.respond(
+                custom_otp_message, 
+                buttons=[[Button.inline("🔄 Re-Request OTP", data=f"checkotp:{target_phone}")]]
+            )
+            
+        except Exception as general_err:
+            logging.error(f"Global error inside checkotp handler: {general_err}")
+
 
 
 # --- Execution Runtime Initialization Loop ---

@@ -314,18 +314,21 @@ async def global_message_handler(event):
         event.handled = True
         return
     
-    # 4. Handle Back Button
+        # Handle Back Button Action cleanly
     elif text == "🔙 Back to Main Menu":
-        await event.respond("👋 Hello! Welcome to SKY OTP Bot.\n\n✨ Use the buttons below to explore our services.", buttons=main_kb())
+        try:
+            await event.respond("Welcome back to the main menu!")
+        except Exception as menu_err:
+            logging.error(f"Error drawing menu: {menu_err}")
         event.handled = True
         return
 
-    
-        # 5. Handle Buy Telegram Account Button (Fully Automated Global Dynamic Inventory)
+    # # 5. Handle Buy Telegram Account Button Action
     elif text == "🛍️ Buy Telegram Account":
-                # 1. Global Price Rule Configuration Map (Fetched dynamically from database)
-        custom_prices = await get_country_prices()
-        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+        try:
+            # # 1. Global Price Rule Configuration
+            custom_prices = await get_custom_prices(uid)
+            DEFAULT_PRICE = custom_prices.get("default", 5.0)
 
        
         # 2. Automated Country-to-Emoji Flag Reference Engine

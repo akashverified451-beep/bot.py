@@ -369,23 +369,20 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-
     # # 5. Handle Buy Telegram Account Button
     elif text == "🛍️ Buy Telegram Account":
+        try:
+            # 1. Global Price Rule Configuration
+            custom_prices = await get_country_prices()
+            DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
 
-    # # 1. Global Price Rule Configuration
-    custom_prices = await get_country_prices()
-    DEFAULT_PRICE = custom_prices.get("DEFAULT")
-
-
-    # 2. Automated Country-to-Emoji Flag
-        country_flags = {
-        "Colombia": "🇨🇴", "Nigeria": "🇳🇬",
-        "United States": "🇺🇸", "India": "🇮🇳",
-        "Iran": "🇮🇷", "Pakistan": "🇵🇰",
-        "Chile": "🇨🇱", "Togo": "🇹🇬",
-        "Myanmar": "🇲🇲"
-    }
+            # 2. Automated Country-to-Emoji Flag
+            country_flags = {
+                "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩",
+                "Canada": "🇨🇦", "United States": "🇺🇸", "India": "🇮🇳",
+                "Ethiopia": "🇪🇹", "Egypt": "🇪🇬", "Iran": "🇮🇷", 
+                "Pakistan": "🇵🇰", "Indonesia": "🇮🇩", "Kenya": "🇰🇪"
+            }
 
     # 3. Dynamic Phone Prefix Map Identification
         prefix_to_country = {

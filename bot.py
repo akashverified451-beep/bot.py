@@ -287,7 +287,7 @@ async def global_message_handler(event):
 
 
      # --- Admin Stats Command ---
-     if text.startswith("/stats"):
+     elif text.startswith("/stats"):
         ADMIN_ID = 8393210427
         if uid != ADMIN_ID:
             await event.respond("❌ You are not authorized to use this command.")
@@ -320,7 +320,7 @@ async def global_message_handler(event):
 
 
     # 1. Handle /start Command
-    elif text.startswith("/start"):
+    if text.startswith("/start"):
           async with await get_db_connection() as conn:
               async with conn.cursor() as cursor:
                   await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))

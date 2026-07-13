@@ -323,43 +323,50 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-    # # 5. Handle Buy Telegram Account Button Action
-    elif text == "🛍️ Buy Telegram Account":
-        try:
-            # # 1. Global Price Rule Configuration
-            custom_prices = await get_custom_prices(uid)
-            DEFAULT_PRICE = custom_prices.get("default", 5.0)
+# # 5. Handle Buy Telegram Account Button Action
+elif text == "🛍️ Buy Telegram Account":
+    try:
+        # # 1. Global Price Rule Configuration
+        custom_prices = await get_custom_prices(uid)
+        DEFAULT_PRICE = custom_prices.get("default", 5.0)
 
-       
-        # 2. Automated Country-to-Emoji Flag Reference Engine
-    country_flags = {
-        "Colombia": "🇨🇴", "Nigeria": "🇳🇬",
-        "United States": "🇺🇸", "India": "🇮🇳",
-        "Iran": "🇮🇷", "Pakistan": "🇵🇰",
-        "Chile": "🇨🇱", "Togo": "🇹🇬",
-        "Myanmar": "🇲🇲"
-    }
+        # # 2. Automated Country-to-Emoji Flag Mapping
+        country_flags = {
+            "Colombia": "🇨🇴", "Nigeria": "🇳🇬",
+            "United States": "🇺🇸", "India": "🇮🇳",
+            "Iran": "🇮🇷", "Pakistan": "🇵🇰",
+            "Chile": "🇨🇱", "Togo": "🇹🇬",
+            "Myanmar": "🇲🇲", "United Kingdom": "🇬🇧",
+            "Bangladesh": "🇧🇩", "Russia": "🇷🇺",
+            "Brazil": "🇧🇷", "Vietnam": "🇻🇳",
+            "Philippines": "🇵🇭"
+        }
 
-    # 3. Dynamic Phone Prefix Map Identification
-       prefix_to_country = {
-        "+57": "Colombia", "+234": "Nigeria",
-        "+91": "India", "+251": "Ethiopia",
-        "+92": "Pakistan", "+62": "Indonesia",
-        "+56": "Chile", "+228": "Togo",
-        "+95": "Myanmar"
-    }
+        # # 3. Dynamic Phone Prefix Map Identification
+        prefix_to_country = {
+            "+57": "Colombia", "+234": "Nigeria",
+            "+1": "United States", "+91": "India",
+            "+98": "Iran", "+92": "Pakistan",
+            "+56": "Chile", "+228": "Togo",
+            "+95": "Myanmar", "+44": "United Kingdom",
+            "+880": "Bangladesh", "+7": "Russia",
+            "+55": "Brazil", "+84": "Vietnam",
+            "+63": "Philippines"
+        }
 
-    # List of known Canadian Area Codes
-       canada_area_codes = [
-        "204", "226", "236", "249", "250",
-        "431", "437", "438", "450", "506",
-        "604", "613", "639", "647", "705",
-        "825", "867", "873", "902", "905"
-    ]
+        # # List of known Canadian Area Codes
+        canada_area_codes = [
+            "204", "226", "236", "249", "250",
+            "431", "437", "438", "450", "506",
+            "604", "613", "639", "647", "705",
+            "825", "867", "873", "902", "905"
+        ]
 
-    async with await get_db_connection() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT...")
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT ...") # Your query here
+
+
             all_numbers = await cursor.fetchall()
             inventory = {}
             for (phone,) in all_numbers:

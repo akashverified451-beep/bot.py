@@ -369,16 +369,17 @@ async def global_message_handler(event):
 
 
     # 2. Automated Country-to-Emoji Flag
-        country_flags = {
+    country_flags = {
         "Colombia": "🇨🇴", "Nigeria": "🇳🇬",
-        "United States": "🇺🇸", "India": "🇮🇳",
-        "Iran": "🇮🇷", "Pakistan": "🇵🇰",
-        "Chile": "🇨🇱", "Togo": "🇹🇬",
-        "Myanmar": "🇲🇲" "Zimbabwe": "🇿🇼", "Afghanistan": "🇦🇫"
+        "India": "🇮🇳", "Pakistan": "🇵🇰",
+        "Iran": "🇮🇷", "Togo": "🇹🇬",
+        "Myanmar": "🇲🇲", "United States": "🇺🇸",
+        "Zimbabwe": "🇿🇼", "Afghanistan": "🇦🇫"
     }
 
+
     # 3. Dynamic Phone Prefix Map Identification
-        prefix_to_country = {
+    prefix_to_country = {
         "+57": "Colombia", "+234": "Nigeria",
         "+91": "India", "+251": "Ethiopia",
         "+92": "Pakistan", "+62": "Indonesia",
@@ -386,6 +387,7 @@ async def global_message_handler(event):
         "+95": "Myanmar", "+263": "Zimbabwe",
         "+93": "Afghanistan"
     }
+
 
     # List of known Canadian Area Codes
     canada_area_codes = [

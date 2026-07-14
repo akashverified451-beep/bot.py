@@ -432,7 +432,7 @@ async def global_message_handler(event):
             inventory[detected_country] = inventory.get(detected_country, 0) + 1
 
     # # 4. Format the Response Message Text
-    response_text = "<b>🛍️ Available Telegram Services</b>"
+    response_text = "🛍️ Available Telegram Services"
 
 
     # # 6. Initialize storefront table header rows

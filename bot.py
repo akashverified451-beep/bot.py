@@ -374,7 +374,7 @@ async def global_message_handler(event):
         "United States": "🇺🇸", "India": "🇮🇳",
         "Iran": "🇮🇷", "Pakistan": "🇵🇰",
         "Chile": "🇨🇱", "Togo": "🇹🇬",
-        "Myanmar": "🇲🇲"
+        "Myanmar": "🇲🇲" "Zimbabwe": "🇿🇼", "Afghanistan": "🇦🇫"
     }
 
     # 3. Dynamic Phone Prefix Map Identification
@@ -383,7 +383,8 @@ async def global_message_handler(event):
         "+91": "India", "+251": "Ethiopia",
         "+92": "Pakistan", "+62": "Indonesia",
         "+56": "Chile", "+228": "Togo",
-        "+95": "Myanmar"
+        "+95": "Myanmar", "+263": "Zimbabwe",
+        "+93": "Afghanistan"
     }
 
     # List of known Canadian Area Codes

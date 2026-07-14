@@ -432,7 +432,7 @@ async def global_message_handler(event):
             inventory[detected_country] = inventory.get(detected_country, 0) + 1
 
     # # 4. Format the Response Message Text
-    response_text = "<b>🏪 Available Telegram Accounts</b>\n\n"
+    response_text = "<b>🛍️ Available Telegram Services</b>\n\n"
     for country, count in inventory.items():
         flag = country_flags.get(country, "🌐")
         response_text += f"{flag} {country}: {count} available\n"

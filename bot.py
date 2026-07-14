@@ -701,7 +701,7 @@ async def callback_handler(event):
             "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819",
             "825", "867", "873", "902", "905"
         ]
-
+  
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts")
@@ -737,15 +737,18 @@ async def callback_handler(event):
                 await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
                 
                 # Log transaction inside active_orders tracking database table
-                await cursor.execute(
-                    "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, 'PENDING_OTP')",
-                    (phone_to_buy, uid, )
-                )
+                try:
+                    await cursor.execute(
+                        "INSERT INTO active_orders (phone_number, status) VALUES (%s, 'PENDING_OTP')",
+                        (phone_to_buy,)
+                    )
+                except Exception as db_err:
+                    print(f"Skipping database tracking entry: {db_err}")
+                    
                 await conn.commit()
 
         display_flag = country_flags.get(target_country, "🌐")
         
-        # Completely variable and matching layout response
         success_msg = (
             f"✅ **Number reserved successfully**\n\n"
             f"📞 **Phone:** `{phone_to_buy}`\n"

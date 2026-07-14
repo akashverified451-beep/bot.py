@@ -374,7 +374,8 @@ async def global_message_handler(event):
         "India": "🇮🇳", "Pakistan": "🇵🇰",
         "Iran": "🇮🇷", "Togo": "🇹🇬",
         "Myanmar": "🇲🇲", "United States": "🇺🇸",
-        "Zimbabwe": "🇿🇼", "Afghanistan": "🇦🇫"
+        "Zimbabwe": "🇿🇼", "Afghanistan": "🇦🇫",
+        "Ethiopia": "🇪🇹"
     }
 
 
@@ -387,6 +388,7 @@ async def global_message_handler(event):
         "+95": "Myanmar", "+263": "Zimbabwe",
         "+93": "Afghanistan"
     }
+
 
 
     # List of known Canadian Area Codes

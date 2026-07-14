@@ -432,10 +432,8 @@ async def global_message_handler(event):
             inventory[detected_country] = inventory.get(detected_country, 0) + 1
 
     # # 4. Format the Response Message Text
-    response_text = "<b>🛍️ Available Telegram Services</b>\n\n"
-    for country, count in inventory.items():
-        flag = country_flags.get(country, "🌐")
-        response_text += f"{flag} {country}: {count} available\n"
+    response_text = "<b>🛍️ Available Telegram Services</b>"
+
 
     # # 6. Initialize storefront table header rows
     tg_services_kb = [
@@ -468,7 +466,7 @@ async def global_message_handler(event):
       
   # 6. Handle Buy Whatsapp OTP Button
     if text == "💬 Buy Whatsapp OTP":
-        await event.respond("🔄 <b>Live WhatsApp OTP Activation Enabled</b>\n\nPlease request your verification code now.", parse_mode='html')
+        await event.respond("<b>💬 Live WhatsApp OTP Activation Enabled</b>", parse_mode="html")
         event.handled = True
         return
 

@@ -452,9 +452,9 @@ async def global_message_handler(event):
         callback_payload = f"buy_tg_{country_name}"
 
         country_row = [
-            Button.inline(f"{flag} {country_name}", data=callback_payload),
-            Button.inline(f"💵 {price}", data=callback_payload),
-            Button.inline(f"{stock_qty} ☑️", data=callback_payload),
+            Button.inline(f"{flag} {country_name} {flag}", data=callback_payload),
+            Button.inline(f"₹ {price}", data=callback_payload),
+            Button.inline(f"{stock_qty} ✅", data=callback_payload),
         ]
         tg_services_kb.append(country_row)
 

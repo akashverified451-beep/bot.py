@@ -671,7 +671,7 @@ async def callback_handler(event):
         return
 
     # # 1. First Step: User clicks a country purchase button
-        if data.startswith("buy_tg_"):
+    if data.startswith("buy_tg_"):
         await event.answer("Validating warehouse stock pipeline...", alert=False)
         target_country = data.replace("buy_tg_", "").strip()
 

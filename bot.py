@@ -671,32 +671,34 @@ async def callback_handler(event):
         return
 
     # # 1. First Step: User clicks a country purchase button
-    if data.startswith("buy_tg_"):
+        if data.startswith("buy_tg_"):
         await event.answer("Validating warehouse stock pipeline...", alert=False)
         target_country = data.replace("buy_tg_", "").strip()
 
-        DEFAULT_PRICE = 53.39
-        custom_prices = {
-            "Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04,
-            "Canada": 40.04, "United States": 41.00, "India": 41.00, "Ethiopia": 41.00
-        }
+        # Fetch dynamic custom pricing options
+        custom_prices = await get_country_prices()
+        country_price = custom_prices.get(target_country, DEFAULT_PRICE or 53.39)
 
+        # Country flags configuration matrix
         country_flags = {
             "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
-            "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
+            "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹", "Egypt": "🇪🇬",
+            "Iran": "🇮🇷", "Pakistan": "🇵🇰", "Indonesia": "🇮🇩", "Kenya": "🇰🇪",
+            "Chile": "🇨🇱", "Togo": "🇹🇬", "Angola": "🇦🇴", "Japan": "🇯🇵", "Zimbabwe": "🇿🇼", "Afghanistan": "🇦🇫"
         }
-        
+
         prefix_to_country = {
-            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
-            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
-            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
-            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
+            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh",
+            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran",
+            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya",
+            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", 
+            "+263": "Zimbabwe", "+93": "Afghanistan"
         }
 
         canada_area_codes = [
-            "204", "226", "236", "249", "250", "289", "306", "343", "365", "403", "416", "418", 
-            "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "600", 
-            "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819", 
+            "204", "226", "236", "249", "250", "289", "306", "343", "365", "403", "416", "418",
+            "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "600",
+            "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819",
             "825", "867", "873", "902", "905"
         ]
 
@@ -704,61 +706,57 @@ async def callback_handler(event):
             async with conn.cursor() as cursor:
                 await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts")
                 all_stock = await cursor.fetchall()
-                
+
                 selected_account = None
                 for phone, api_id, api_hash, session_str in all_stock:
                     clean_phone = phone.strip()
                     if not clean_phone.startswith("+"):
                         clean_phone = "+" + clean_phone
-                    
-                    # 1. Check North American Region routing flags explicitly
+
                     if clean_phone.startswith("+1") and len(clean_phone) >= 5:
                         area_code = clean_phone[2:5]
                         account_country = "Canada" if area_code in canada_area_codes else "United States"
                     else:
-                        # 2. Check global international prefixes USING LONGEST-FIRST SORTING to prevent mismatch crashes
                         account_country = "Other International"
                         for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
                             if clean_phone.startswith(prefix):
                                 account_country = prefix_to_country[prefix]
                                 break
-                    
-                    # 3. Clean trailing formatting states and evaluate the match requirement
+
                     if account_country.strip() == target_country:
                         selected_account = (phone, session_str)
                         break
-                
+
                 if not selected_account:
-                    await event.respond(f"⚠️ **Out of Stock!** No available numbers match your request for **{target_country}**.")
+                    await event.respond(f"⚠️ **Out of Stock!** No available numbers match your request for {target_country}.")
                     return
-                
+
                 phone_to_buy, session_to_buy = selected_account
-                
-                # Delete the matching target number to allocate and lock the active purchase flow
+
+                # Delete from available stock pool
                 await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
+                
+                # Log transaction inside active_orders tracking database table
                 await cursor.execute(
-                    "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
-                    (phone_to_buy, uid, "PENDING_OTP")
+                    "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, 'PENDING_OTP')",
+                    (phone_to_buy, uid, )
                 )
                 await conn.commit()
 
-                # Build order response mapping templates safely
         display_flag = country_flags.get(target_country, "🌐")
-        display_price = custom_prices.get(target_country, DEFAULT_PRICE)
-
+        
+        # Completely variable and matching layout response
         success_msg = (
             f"✅ **Number reserved successfully**\n\n"
             f"📞 **Phone:** `{phone_to_buy}`\n"
-            f"🌍 **Country:** {target_country} {display_flag}\n"
-            f"💰 **Price:** ₹{display_price:.1f}\n\n"
-            f"🌟 **Note:** Number cannot be cancelled because OTP Delivery is guaranteed!"
+            f"🌐 **Country:** {target_country} {display_flag}\n"
+            f"💵 **Price:** ₹{country_price}\n\n"
+            f"✉️ **OTP:** ⏳ NO LIVE SMS FOUND YET\n\n"
+            f"⚠️ **Note:** Number cannot be cancelled because OTP Delivery is guaranteed."
         )
-        
-        await event.respond(success_msg, buttons=[[Button.inline("✉️ Check OTP", data=f"checkotp:{phone_to_buy}")]])
-        return
 
-        
-        await event.respond(success_msg, buttons=[[Button.inline("✉️ Check OTP", data=f"checkotp:{phone_to_buy}")]])
+        otp_kb = [[Button.inline("📩 Check OTP", data=f"checkotp:{phone_to_buy}")]]
+        await event.respond(success_msg, buttons=otp_kb)
         return
 
         # 2. Second Step: Extract stored data logs and execute instant validation hook

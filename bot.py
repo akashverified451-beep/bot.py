@@ -370,7 +370,7 @@ async def global_message_handler(event):
 
     # 2. Automated Country-to-Emoji Flag
     country_flags = {
-        "Colombia": "🇨🇴", "Nigeria": "🇳🇬",
+        "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Canada": "🇨🇦",
         "India": "🇮🇳", "Pakistan": "🇵🇰",
         "Iran": "🇮🇷", "Togo": "🇹🇬",
         "Myanmar": "🇲🇲", "United States": "🇺🇸",

@@ -362,41 +362,42 @@ async def global_message_handler(event):
 
     
     # # 5. Handle Buy Telegram Account Button
-    elif text == "🛍️ Buy Telegram Account":
-    # # 1. Global Price Rule Configuration
+    elif text == "🛒 Buy Telegram Account":
+        # # 1. Global Price Rule Configuration
         custom_prices = await get_country_prices()
         DEFAULT_PRICE = custom_prices.get("DEFAULT")
 
-
-    # 2. Automated Country-to-Emoji Flag
+        # # 2. Automated Country-to-Emoji Flag
         country_flags = {
-        "Colombia": "🇨🇴", "Nigeria": "🇳🇬",
-        "United States": "🇺🇸", "India": "🇮🇳",
-        "Iran": "🇮🇷", "Pakistan": "🇵🇰",
-        "Chile": "🇨🇱", "Togo": "🇹🇬",
-        "Myanmar": "🇲🇲"
-    }
+            "Colombia": "🇨🇴", "Nigeria": "🇳🇬",
+            "United States": "🇺🇸", "India": "🇮🇳",
+            "Iran": "🇮🇷", "Pakistan": "🇵🇰",
+            "Chile": "🇨🇱", "Togo": "🇹🇬",
+            "Myanmar": "🇲🇲"
+        }
 
-    # 3. Dynamic Phone Prefix Map Identification
+        # # 3. Dynamic Phone Prefix Map Identification
         prefix_to_country = {
-        "+57": "Colombia", "+234": "Nigeria",
-        "+91": "India", "+251": "Ethiopia",
-        "+92": "Pakistan", "+62": "Indonesia",
-        "+56": "Chile", "+228": "Togo",
-        "+95": "Myanmar"
-    }
+            "+57": "Colombia", "+234": "Nigeria",
+            "+91": "India", "+251": "Ethiopia",
+            "+92": "Pakistan", "+62": "Indonesia",
+            "+56": "Chile", "+228": "Togo",
+            "+95": "Myanmar"
+        }
 
-    # List of known Canadian Area Codes
-    canada_area_codes = [
-        "204", "226", "236", "249", "250",
-        "431", "437", "438", "450", "506",
-        "604", "613", "639", "647", "705",
-        "825", "867", "873", "902", "905"
-    ]
+        # # List of known Canadian Area Codes
+        canada_area_codes = [
+            "204", "226", "236", "249", "250",
+            "431", "437", "438", "450", "506",
+            "604", "613", "639", "647", "705",
+            "825", "867", "873", "902", "905"
+        ]
+
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("SELECT phone_number FROM available_accounts")
                 all_numbers = await cursor.fetchall()
+
 
         inventory = {}
         for row in all_numbers:

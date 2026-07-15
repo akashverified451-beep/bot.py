@@ -360,83 +360,78 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-    
-    # 5. Handle Buy Telegram Account Button
-    elif text == "🛒 Buy Telegram Account":
+# --- Independent Buy Telegram Account Handler ---
+@bot.on(events.NewMessage(pattern="🛒 Buy Telegram Account"))
+async def independent_buy_handler(event):
+    try:
+        # Safe price check fallback configuration
         try:
-            # Safe price check fallback configuration
-            try:
-                custom_prices = await get_country_prices()
-                DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
-            except Exception:
-                DEFAULT_PRICE = 53.39  # Fallback if function fails or doesn't exist
+            custom_prices = await get_country_prices()
+            DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+        except Exception:
+            DEFAULT_PRICE = 53.39
 
-            # # 2. Automated Country-to-Emoji Flag
-            country_flags = {
-                "Colombia": "🇨🇴", "Nigeria": "🇳🇬",
-                "United States": "🇺🇸", "India": "🇮🇳",
-                "Iran": "🇮🇷", "Pakistan": "🇵🇰",
-                "Chile": "🇨🇱", "Togo": "🇹🇬",
-                "Myanmar": "🇲🇲"
-            }
+        country_flags = {
+            "Colombia": "🇨🇴", "Nigeria": "🇳🇬",
+            "United States": "🇺🇸", "India": "🇮🇳",
+            "Iran": "🇮🇷", "Pakistan": "🇵🇰",
+            "Chile": "🇨🇱", "Togo": "🇹🇬",
+            "Myanmar": "🇲🇲"
+        }
 
-            # # 3. Dynamic Phone Prefix Map Identification
-            prefix_to_country = {
-                "+57": "Colombia", "+234": "Nigeria",
-                "+91": "India", "+251": "Ethiopia",
-                "+92": "Pakistan", "+62": "Indonesia",
-                "+56": "Chile", "+228": "Togo",
-                "+95": "Myanmar"
-            }
+        prefix_to_country = {
+            "+57": "Colombia", "+234": "Nigeria",
+            "+91": "India", "+251": "Ethiopia",
+            "+92": "Pakistan", "+62": "Indonesia",
+            "+56": "Chile", "+228": "Togo",
+            "+95": "Myanmar"
+        }
 
-            # # List of known Canadian Area Codes
-            canada_area_codes = [
-                "204", "226", "236", "249", "250",
-                "431", "437", "438", "450", "506",
-                "604", "613", "639", "647", "705",
-                "825", "867", "873", "902", "905"
-            ]
+        canada_area_codes = [
+            "204", "226", "236", "249", "250",
+            "431", "437", "438", "450", "506",
+            "604", "613", "639", "647", "705",
+            "825", "867", "873", "902", "905"
+        ]
 
-            # Connect to DB forcing SSL explicitly
-            conn = await psycopg.AsyncConnection.connect(DATABASE_URL, sslmode="require")
-            async with conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute("SELECT phone_number FROM available_accounts")
-                    all_numbers = await cursor.fetchall()
+        # Connect forcing SSL mode
+        conn = await psycopg.AsyncConnection.connect(DATABASE_URL, sslmode="require")
+        async with conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT phone_number FROM available_accounts")
+                all_numbers = await cursor.fetchall()
 
-            Inventory = {}
-            for row in all_numbers:
-                phone = str(row[0]) if isinstance(row, (tuple, list)) else str(row)
-                clean_phone = phone.strip()
-                if not clean_phone:
-                    continue
+        Inventory = {}
+        for row in all_numbers:
+            phone = str(row[0]) if isinstance(row, (tuple, list)) else str(row)
+            clean_phone = phone.strip()
+            if not clean_phone:
+                continue
 
-                if not clean_phone.startswith("+"):
-                    clean_phone = "+" + clean_phone
+            if not clean_phone.startswith("+"):
+                clean_phone = "+" + clean_phone
 
-                detected_country = "Other International"
-                if clean_phone.startswith("+1") and len(clean_phone) >= 5:
-                    area_code = clean_phone[2:5]
-                    detected_country = "Canada" if area_code in canada_area_codes else "United States"
-                else:
-                    for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-                        if clean_phone.startswith(prefix):
-                            detected_country = prefix_to_country[prefix]
-                            break
+            detected_country = "Other International"
+            if clean_phone.startswith("+1") and len(clean_phone) >= 5:
+                area_code = clean_phone[2:5]
+                detected_country = "Canada" if area_code in canada_area_codes else "United States"
+            else:
+                for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                    if clean_phone.startswith(prefix):
+                        detected_country = prefix_to_country[prefix]
+                        break
 
-                Inventory[detected_country] = Inventory.get(detected_country, 0) + 1
+            Inventory[detected_country] = Inventory.get(detected_country, 0) + 1
 
-            # # 4. Format and Send the Response Message to the User
-            response_text = "<b>📦 Available Telegram Accounts</b>\n\n"
-            for country, count in Inventory.items():
-                flag = country_flags.get(country, "🌐")
-                response_text += f"{flag} {country}: ({count}) available\n"
+        response_text = "<b>📦 Available Telegram Accounts</b>\n\n"
+        for country, count in Inventory.items():
+            flag = country_flags.get(country, "🌐")
+            response_text += f"{flag} {country}: ({count}) available\n"
 
-            await event.respond(response_text, parse_mode='html')
+        await event.respond(response_text, parse_mode='html')
 
-        except Exception as error:
-            # If anything breaks, the bot will now text you the exact error instead of freezing!
-            await event.respond(f"❌ **Operational Error:** `{str(error)}`")
+    except Exception as error:
+        await event.respond(f"❌ **Operational Error:** `{str(error)}`")
 
         # 6. Initialize storefront table header rows
         tg_services_kb = [

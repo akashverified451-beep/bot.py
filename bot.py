@@ -708,7 +708,7 @@ async def callback_handler(event):
             async with conn.cursor() as cursor:
                 await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts")
                 all_stock = await cursor.fetchall()
-                
+
                 selected_account = None
                 for phone, api_id, api_hash, session_str in all_stock:
                     clean_phone = phone.strip()

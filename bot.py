@@ -342,12 +342,21 @@ async def global_message_handler(event):
     # 2. Handle Wallet Button
     elif text == "💼 Wallet":
         bal = await get_user_bal(uid)
-        wallet_buttons = [[Button.inline("➕ Add Funds", data="add_funds_process")]]
-        await event.respond(f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", buttons=wallet_buttons, parse_mode='html')
+        
+        # Exact layout structure matching your reference picture
+        wallet_buttons = [
+            [Button.inline("➕ Add Funds", data="add_funds_process")],
+            [Button.inline("⬅️ Back to Main Menu", data="back_to_main_menu")]
+        ]
+        
+        await event.respond(
+            f"💼 <b>Wallet</b>\n\n💰 Balance: <b>破{bal}</b>", 
+            buttons=wallet_buttons, 
+            parse_mode='html'
+        )
         event.handled = True
         return
 
-    
     # 3. Handle Profile Button
     elif text == "👤 User Profile":
         bal = await get_user_bal(uid)

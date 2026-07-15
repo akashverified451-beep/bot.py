@@ -808,10 +808,7 @@ async def main():
     await bot.start(bot_token=BOT_TOKEN)
     logging.info("SKY OTP Master Bot Infrastructure is Online.")
     await bot.run_until_disconnected()
-    
+
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(initialize_database_schema())
-    print("🚀 System Engine Operational. Initializing Master Bot Core Pipeline...")
-    bot.start(bot_token=BOT_TOKEN)
-    bot.run_until_disconnected()
+    import asyncio
+    asyncio.run(main())

@@ -762,22 +762,23 @@ if data.startswith("buy_tg_"):
         otp_kb = [[Button.inline("📩 Check OTP", data=f"checkotp:{phone_to_buy}")]]
         await event.respond(success_msg, buttons=otp_kb)
         return
-
+    except Exception as step1_error:
+        print(f"Error in step 1: {step1_error}")
+    
     # --- STEP 2 ---
-    # Line 767: Modified to 'if' and aligned perfectly with line 674 (4 spaces)
     if data.startswith("checkotp:"):
         _, target_phone = data.split(":", 1)
         target_phone = target_phone.strip()
         uid = event.sender_id
 
-                    await event.answer("Scanning account inbox instantly...", alert=False)
+        await event.answer("Scanning account inbox instantly...", alert=False)
 
-                    api_id_val = None
-                    api_hash_val = None
-                    session_str_val = None
+        api_id_val = None
+        api_hash_val = None
+        session_str_val = None
 
-                    async with await get_db_connection() as conn:
-                        async with conn.cursor() as cursor:
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
                             # Query active_orders table to fetch backup key details securely
                             await cursor.execute(
                                 "SELECT status, api_id, api_hash FROM active_orders WHERE phone_number = %s AND uid = %s"

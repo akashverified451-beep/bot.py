@@ -623,17 +623,17 @@ async def admin_send_receipt_click(event):
 
     # Inform the user and complete the admin view update
     try:
-        await bot.send_message(entity=uid, message=f"✅ <b>Deposit Confirmed!</b>\n\n💰 ₹{session_amt} has been successfully added to your wallet balance.", parse_mode='html')
+        await bot.send_message(entity=uid, message=f"🍏 <b>Deposit Confirmed!</b>\n\n Your ₹{session_amt} has been successfully added to your balance.", parse_mode='html')
         await event.edit(f"✅ Approved and sent ₹{session_amt} to user <code>{uid}</code>", parse_mode='html')
     except Exception as e:
         logging.error(f"Failed to send confirmation message to user: {e}")
         await event.edit(f"✅ Approved in DB, but couldn't message user. Amount: ₹{session_amt}", parse_mode='html')
 
 # --- 3. FIXED CANCEL & DENY BUTTON HANDLER ---
-@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"deny:") or d.startswith(b"cancel:")))
+@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b'deny:') or d.startswith(b'cancel:')))
 async def cancel_or_deny_click(event):
-    await event.answer()  # Stops the loading spinner instantly
-    
+    await event.answer() # Stops the leading spinner instantly
+
     data_str = event.data.decode('utf-8')
     
     if ":" in data_str:
@@ -660,7 +660,7 @@ async def cancel_or_deny_click(event):
     return
 
 # --- Complete High-Speed Error-Free Callback Query Handler ---
-@bot.on(events.CallbackQuery())
+@bot.on(events.CallbackQuery)
 async def callback_handler(event):
     data = event.data.decode('utf-8')
     uid = event.sender_id

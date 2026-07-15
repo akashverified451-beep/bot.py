@@ -674,33 +674,33 @@ async def callback_handler(event):
         await event.answer()
         return
 
-    # # 1. First Step: User clicks a country purchase button
+    # 1. First Step: User clicks a country purchase button
     if data.startswith("buy_tg_"):
-            await event.answer("Validating warehouse stock pipeline...", alert=False)
-            target_country = data.replace("buy_tg_", "").strip()
+        await event.answer("Validating warehouse stock pipeline...", alert=False)
+        target_country = data.replace("buy_tg_", "").strip()
 
         DEFAULT_PRICE = 53.39
         custom_prices = {
             "Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04,
             "Canada": 40.04, "United States": 41.00, "India": 41.00, "Ethiopia": 41.00
         }
-
+        
         country_flags = {
             "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
             "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
         }
         
         prefix_to_country = {
-            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
-            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
-            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
+            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh",
+            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran",
+            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya",
             "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
         }
 
         canada_area_codes = [
-            "204", "226", "236", "249", "250", "289", "306", "343", "365", "403", "416", "418", 
-            "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "600", 
-            "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819", 
+            "204", "226", "236", "249", "250", "289", "306", "343", "365", "403", "416", "418",
+            "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "600",
+            "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819",
             "825", "867", "873", "902", "905"
         ]
 
@@ -714,138 +714,102 @@ async def callback_handler(event):
                     clean_phone = phone.strip()
                     if not clean_phone.startswith("+"):
                         clean_phone = "+" + clean_phone
-                    
-                    # 1. Check North American Region routing flags explicitly
+                        
+                    # Check North American Region routing flags explicitly
                     if clean_phone.startswith("+1") and len(clean_phone) >= 5:
                         area_code = clean_phone[2:5]
                         account_country = "Canada" if area_code in canada_area_codes else "United States"
                     else:
-                        # 2. Check global international prefixes USING LONGEST-FIRST SORTING to prevent mismatch crashes
-                        account_country = "Other International"
+                        # Check global international prefixes using LONGEST-FIRST sorting
+                        account_country = "Other"
                         for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
                             if clean_phone.startswith(prefix):
                                 account_country = prefix_to_country[prefix]
                                 break
-                    
-                    # 3. Clean trailing formatting states and evaluate the match requirement
+                                
                     if account_country.strip() == target_country:
-                        selected_account = (phone, session_str)
+                        selected_account = (phone, api_id, api_hash, session_str)
                         break
-                
+                        
                 if not selected_account:
-                    await event.respond(f"⚠️ **Out of Stock!** No available numbers match your request for **{target_country}**.")
+                    await event.respond(f"⚠ **Out of Stock!** No available numbers match your request for **{target_country}**.")
                     return
+                    
+                phone_to_buy, api_id_val, api_hash_val, session_to_buy = selected_account
                 
-                phone_to_buy, session_to_buy = selected_account
-                
-                # Delete the matching target number to allocate and lock the active purchase flow
                 await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
                 await cursor.execute(
                     "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
-                    (phone_to_buy, uid, "PENDING_OTP")
+                    (phone_to_buy, uid, f"{api_id_val}|{api_hash_val}|{session_to_buy}")
                 )
                 await conn.commit()
 
-                # Build order response mapping templates safely
         display_flag = country_flags.get(target_country, "🌐")
         display_price = custom_prices.get(target_country, DEFAULT_PRICE)
-
+        
         success_msg = (
-            f"✅ **Number reserved successfully**\n\n"
-            f"📞 **Phone:** `{phone_to_buy}`\n"
-            f"🌍 **Country:** {target_country} {display_flag}\n"
-            f"💰 **Price:** ₹{display_price:.1f}\n\n"
-            f"🌟 **Note:** Number cannot be cancelled because OTP Delivery is guaranteed!"
+            f"🛒 **Product Provision Complete** {display_flag}\n\n"
+            f"▪ **Country Profile:** `{target_country}`\n"
+            f"▪ **Allocated Number:** `{phone_to_buy}`\n"
+            f"▪ **Cost Transacted:** `${display_price}`\n\n"
+            "✨ Enter this phone number in your login app now, then click **Check OTP** below."
         )
-        
-        await event.respond(success_msg, buttons=[[Button.inline("✉️ Check OTP", data=f"checkotp:{phone_to_buy}")]])
+        await event.respond(success_msg, buttons=[[Button.inline("✉ Check OTP", data=f"checkotp:{phone_to_buy}")]])
         return
 
-        
-        await event.respond(success_msg, buttons=[[Button.inline("✉️ Check OTP", data=f"checkotp:{phone_to_buy}")]])
-        return
-
-        # 2. Second Step: Extract stored data logs and execute instant validation hook
+    # 2. Second Step: Extract stored session and execute instant validation hook
     elif data.startswith("checkotp:"):
         _, target_phone = data.split(":")
         target_phone = target_phone.strip()
-        
         await event.answer("🔄 Scanning account inbox instantly...", alert=False)
-        
-        api_id_val = None
-        api_hash_val = None
-        session_str_val = None
         
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
-                # Query active_orders table to fetch backup key details securely
-                await cursor.execute(
-                    "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", 
-                    (target_phone, uid)
-                )
-                row = await cursor.fetchone()
-                if row and row[0]:
-                    try:
-                        api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
-                    except ValueError:
-                        pass
-
-        fetched_otp = "⏳ NO LIVE SMS FOUND YET"
-
-        if session_str_val:
-            try:
-                from telethon.sessions import StringSession
+                await cursor.execute("SELECT status FROM active_orders WHERE phone_number = %s", (target_phone,))
+                record = await cursor.fetchone()
                 
-                temp_client = TelegramClient(
-                    StringSession(session_str_val), 
-                    int(api_id_val), 
-                    api_hash_val,
-                    connection_retries=1,
-                    retry_delay=1
-                )
-                
-                # Fast connection timeout constraint
-                await asyncio.wait_for(temp_client.connect(), timeout=4.0)
-                
-                if await temp_client.is_user_authorized():
-                    # Scan exclusively the official Telegram notifications user profile
-                    async for msg in temp_client.iter_messages(777000, limit=1):
-                        if msg.text:
-                            otp_match = re.search(r'\b\d{5,6}\b', msg.text)
-                            if otp_match:
-                                fetched_otp = otp_match.group(0)
-                            else:
-                                fetched_otp = msg.text[:40]
-                else:
-                    fetched_otp = "❌ SESSION EXPIRED / TERMINATED"
-                    
-            except Exception as e:
-                logging.error(f"Instant Live Check Fault: {e}")
-                fetched_otp = "⏳ NO LIVE SMS FOUND YET"
-                
-            finally:
-                if 'temp_client' in locals() and temp_client.is_connected():
-                    await temp_client.disconnect()
-
-        # Clean display presentation payload without old text lines
-        custom_otp_message = (
-            "🇮🇳 India       ₹41.0       ✅\n\n"
-            f"📞 **Phone Number:** `{target_phone}`\n"
-            f"📩 **OTP:** **`{fetched_otp}`**\n\n"
-            "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
-        )
+        if not record or not record[0]:
+            await event.edit("❌ **Order Reference Missing:** This order lifecycle session has expired.")
+            return
+            
+        api_id_val, api_hash_val, session_str_val = record[0].split("|")
+        retry_btn_kb = [[Button.inline("🔄 Fetch Code Again", data=f"checkotp:{target_phone}")]]
         
-        retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=data)]]
-        await event.edit(custom_otp_message, buttons=retry_btn_kb)
+        try:
+            # Create a temporary non-blocking user instance to look up logs
+            temp_client = TelegramClient(MemorySession(), int(api_id_val), api_hash_val)
+            await temp_client.connect()
+            
+            if not await temp_client.is_user_authorized():
+                await temp_client.sign_in(session_str_val)
+                
+            otp_code_extracted = None
+            async for message in temp_client.iter_messages(777000, limit=5):
+                text_content = message.message or ""
+                regex_match = re.search(r'\b\d{5}\b', text_content)
+                if regex_match:
+                    otp_code_extracted = regex_match.group(0)
+                    break
+                    
+            await temp_client.disconnect()
+            
+            if otp_code_extracted:
+                custom_otp_message = (
+                    f"🎯 **Your Verification Login Key Is Ready:**\n\n"
+                    f"🔑 OTP Code: `{otp_code_extracted}`\n\n"
+                    f"📱 Target Profile Link: `{target_phone}`"
+                )
+                await event.edit(custom_otp_message, buttons=retry_btn_kb)
+            else:
+                await event.edit(f"⏳ **No Code Detected Yet:** Telegram hasn't transmitted a code to `{target_phone}`. Try again in a minute.", buttons=retry_btn_kb)
+        except Exception as client_err:
+            await event.edit(f"❌ **Live Synchronizer Hook Exception:** `{str(client_err)}`", buttons=retry_btn_kb)
         return
 
-# --- Execution Runtime Initialization Loop ---
-async def main():
-    await init_db()
-    await bot.start(bot_token=BOT_TOKEN)
-    logging.info("SKY OTP Master Bot Infrastructure is Online.")
-    await bot.run_until_disconnected()
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(initialize_database_schema())
+    print("🚀 System Engine Operational. Initializing Master Bot Core Pipeline...")
+    bot.start(bot_token=BOT_TOKEN)
+    bot.run_until_disconnected()

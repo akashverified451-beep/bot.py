@@ -504,29 +504,37 @@ async def global_message_handler(event):
 
     
     # Handle Screenshot Uploads
-    elif event.photo:
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = %s ORDER BY claim_id DESC LIMIT 1", (uid,))
-                row = await cursor.fetchone()
-            
-        if not row:
-            await event.respond("❌ You don't have any active deposit generation requests open. Please click '➕ Add Funds' first.")
-            return
-            
-        claim_id, txn = row[0], row[1]
-        await event.respond("⏳ <b>Screenshot Received!</b>\nYour proof has been sent to the admin for manual verification.", parse_mode='html')
-        
-        akb = [
-            [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
-            [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
-            [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
-            [Button.inline("📩 Confirm & Send", data=f"send:{claim_id}")],
-            [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
-        ]
-        
-        admin_text = f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0"
-        await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
+@bot.on(events.CallbackQuery(data=b'add_funds_process'))
+async def handle_add_funds_click(event):
+    # 1. UNLOCK THE TELEGRAM INTERFACE INSTANTLY
+    await event.answer() 
+    
+    uid = event.sender_id
+    import random
+    txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
+    claim_id = str(random.randint(1000, 9999))
+
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
+            await conn.commit()
+
+    qr_url = f"https://qrserver.com"
+
+    cap = (
+        "🍏 <b>Welcome to the Deposit System</b>\n\n"
+        "Scan the QR code below and pay.\n\n"
+        "⚠️ After making the payment, please send the payment screenshot here."
+    )
+    
+    await event.respond(
+        cap,
+        file=qr_url,
+        buttons=[[Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]],
+        parse_mode='html'
+    )
+    raise events.StopPropagation
+
 
 # --- Admin Callback Button Processors ---
 @bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"add:")))
@@ -630,7 +638,7 @@ async def cancel_or_deny_click(event):
         event.handled = True
         return
 
-# --- DEDICATED ADD FUNDS WALLET PAYMENT PROCESSOR ---
+# --- ADD FUNDS WALLET PAYMENT PROCESSOR ---
 @bot.on(events.CallbackQuery(data=b'add_funds_process'))
 async def handle_add_funds_click(event):
     uid = event.sender_id

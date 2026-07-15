@@ -501,32 +501,6 @@ async def global_message_handler(event):
         return
 
     
-    # Handle Add Funds Button
-    elif text == "➕ Add Funds":
-        txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
-        claim_id = str(random.randint(1000, 9999))
-        
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
-                await conn.commit()
-        
-        img = qrcode.make(f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR")
-        buf = io.BytesIO()
-        img.save(buf, format='PNG')
-        buf.seek(0)
-        buf.name = "qr.png" 
-        
-        # ✅ UPDATED: Message formatting updated as requested
-        cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay.\n\n⚠️ After making the payment, simply upload your Payment Screenshot for verification the payment.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
-        
-        await event.respond(
-            cap,
-            file=buf,
-            buttons=[[Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]],
-            parse_mode='html'
-        )
-    
     # Handle Screenshot Uploads
     elif event.photo:
         async with await get_db_connection() as conn:
@@ -653,6 +627,46 @@ async def cancel_or_deny_click(event):
                 
         event.handled = True
         return
+
+# --- DEDICATED ADD FUNDS WALLET PAYMENT PROCESSOR ---
+@bot.on(events.CallbackQuery(data=b'add_funds_process'))
+async def handle_add_funds_click(event):
+    uid = event.sender_id
+    
+    # 1. Initialize transient generation assets safely
+    import random, io, qrcode
+    txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
+    claim_id = str(random.randint(1000, 9999))
+
+    # 2. Write the pending transaction token securely to the tracking database
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
+            await conn.commit()
+
+    # 3. Dynamic layout buffer generation for the vendor QR image stream
+    # ⚠️ REPLACE YOUR_UPI_ID WITH YOUR ACTUAL MERCH_ID (e.g., business@ybl)
+    img = qrcode.make(f"upi://pay?pa=YOUR_UPI_ID&pn=SKY_OTP&cu=INR")
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    buf.name = "qr.png"
+
+    # 4. Compile customer instructional display layout
+    cap = (
+        "🍏 <b>Welcome to the Deposit System</b>\n\n"
+        "Scan the QR code below and pay.\n\n"
+        "⚠️ After making the payment, please send the payment screenshot here."
+    )
+    
+    # 5. Route asset payload directly to client terminal view
+    await event.respond(
+        cap,
+        file=buf,
+        buttons=[[Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]],
+        parse_mode='html'
+    )
+    raise events.StopPropagation
 
 # --- Complete High-Speed Error-Free Callback Query Handler ---
 @bot.on(events.CallbackQuery)

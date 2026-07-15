@@ -778,7 +778,7 @@ if data.startswith("buy_tg_"):
             async with conn.cursor() as cursor:
                 # Query active_orders table to fetch backup key details securely
                 await cursor.execute(
-                    "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s",
+                    "SELECT status, api_id, api_hash FROM active_orders WHERE phone_number = %s AND uid = %s"
                     (target_phone, uid)
                 )
                 row = await cursor.fetchone()

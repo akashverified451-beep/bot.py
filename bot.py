@@ -342,9 +342,11 @@ async def global_message_handler(event):
     # 2. Handle Wallet Button
     elif text == "💼 Wallet":
         bal = await get_user_bal(uid)
-        await event.respond(f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", buttons=balance_kb(), parse_mode='html')
+        wallet_buttons = [[Button.inline("➕ Add Funds", data="add_funds_process")]]
+        await event.respond(f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", buttons=wallet_buttons, parse_mode='html')
         event.handled = True
         return
+
     
     # 3. Handle Profile Button
     elif text == "👤 User Profile":

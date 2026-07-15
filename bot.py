@@ -753,8 +753,7 @@ async def callback_handler(event):
         otp_kb = [[Button.inline("📩 Check OTP", data=f"checkotp:{phone_to_buy}")]]
         await event.respond(success_msg, buttons=otp_kb)
         return
-    except Exception as step1_error:
-        print(f"Error in step 1: {step1_error}")
+
     
     # --- STEP 2 ---
     if data.startswith("checkotp:"):

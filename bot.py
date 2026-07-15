@@ -663,9 +663,9 @@ async def callback_handler(event):
 
     # 1. First Step: User clicks a country purchase button
     if data.startswith("buy_tg_"):
-        try:
-            await event.answer("Validating warehouse stock pipeline...", alert=False)
-            target_country = data.replace("buy_tg_", "").strip()
+        await event.answer("Validating warehouse stock pipeline...", alert=False)
+        target_country = data.replace("buy_tg_", "").strip()
+
 
         # Fetch dynamic custom pricing options
         custom_prices = await get_country_prices()

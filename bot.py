@@ -762,12 +762,13 @@ if data.startswith("buy_tg_"):
         otp_kb = [[Button.inline("📩 Check OTP", data=f"checkotp:{phone_to_buy}")]]
         await event.respond(success_msg, buttons=otp_kb)
         return
-        
-                # 2. Second Step: Extract stored data logs and execute instant validation hook
-                elif data.startswith("checkotp:"):
-                    _, target_phone = data.split(":", 1)
-                    target_phone = target_phone.strip()
-                    uid = event.sender_id  # Ensure uid is defined so line 782 doesn't crash!
+
+    # --- STEP 2 ---
+    # Line 767: Modified to 'if' and aligned perfectly with line 674 (4 spaces)
+    if data.startswith("checkotp:"):
+        _, target_phone = data.split(":", 1)
+        target_phone = target_phone.strip()
+        uid = event.sender_id
 
                     await event.answer("Scanning account inbox instantly...", alert=False)
 

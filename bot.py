@@ -646,9 +646,7 @@ async def cancel_or_deny_click(event):
 # --- ADD FUNDS WALLET PAYMENT PROCESSOR ---
 @bot.on(events.CallbackQuery(data=b'add_funds_process'))
 async def handle_add_funds_click(event):
-    # 1. UNLOCK THE TELEGRAM INTERFACE INSTANTLY
     await event.answer() 
-    
     uid = event.sender_id
     import random
     txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
@@ -659,7 +657,7 @@ async def handle_add_funds_click(event):
             await cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
             await conn.commit()
 
-    qr_url = f"https://qrserver.com"
+    qr_url = f"skyotpprovider@axisbank"
 
     cap = (
         "🍏 <b>Welcome to the Deposit System</b>\n\n"

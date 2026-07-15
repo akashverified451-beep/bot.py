@@ -765,8 +765,9 @@ if data.startswith("buy_tg_"):
 
     # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):
-        _, target_phone = data.split(":")
+        _, target_phone = data.split(":", 1)
         target_phone = target_phone.strip()
+        uid = event.sender_id  # Ensure uid is defined so line 782 doesn't crash!
 
         await event.answer("Scanning account inbox instantly...", alert=False)
 

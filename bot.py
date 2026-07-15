@@ -763,22 +763,22 @@ if data.startswith("buy_tg_"):
         await event.respond(success_msg, buttons=otp_kb)
         return
 
-        # 2. Second Step: Extract stored data logs and execute instant validation hook
+           # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):
         _, target_phone = data.split(":")
         target_phone = target_phone.strip()
-        
-        await event.answer("🔄 Scanning account inbox instantly...", alert=False)
-        
+
+        await event.answer("Scanning account inbox instantly...", alert=False)
+
         api_id_val = None
         api_hash_val = None
         session_str_val = None
-        
+
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 # Query active_orders table to fetch backup key details securely
                 await cursor.execute(
-                    "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", 
+                    "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s",
                     (target_phone, uid)
                 )
                 row = await cursor.fetchone()
@@ -789,6 +789,35 @@ if data.startswith("buy_tg_"):
                         pass
 
         fetched_otp = "⏳ NO LIVE SMS FOUND YET"
+        if session_str_val:
+            try:
+                from telethon.sessions import StringSession
+
+                temp_client = TelegramClient(
+                    StringSession(session_str_val),
+                    int(api_id_val),
+                    api_hash_val,
+                    connection_retries=1,
+                    retry_delay=1
+                )
+
+                # Fast connection timeout constraint
+                await asyncio.wait_for(temp_client.connect(), timeout=4.0)
+
+                if await temp_client.is_user_authorized():
+                    # Scan exclusively the official Telegram notifications user profile
+                    async for msg in temp_client.iter_messages(777000, limit=1):
+                        if msg.text:
+                            otp_match = re.search(r'\b\d{5,6}\b', msg.text)
+                            if otp_match:
+                                fetched_otp = otp_match.group(0)
+                            else:
+                                fetched_otp = msg.text[:40]
+                else:
+                    fetched_otp = "❌ SESSION EXPIRED / TERMINATED"
+            except Exception as e:
+                logging.error(f"Instant Live Check Fault: {e}")
+                fetched_otp = "⏳ NO LIVE SMS FOUND YET"
 
         if session_str_val:
             try:

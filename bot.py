@@ -450,9 +450,10 @@ async def global_message_handler(event):
     ]
 
     # # 7. Dynamically generate rows ordered by available inventory sizing
+    custom_prices = await get_country_prices()
     for country_name, stock_qty in inventory.items():
         flag = country_flags.get(country_name, "🌐")
-        price = custom_prices.get(country_name, DEFAULT_PRICE)
+
 
         callback_payload = f"buy_tg_{country_name}"
 

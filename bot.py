@@ -806,7 +806,13 @@ async def callback_handler(event):
             await event.edit(f"❌ **Live Synchronizer Hook Exception:** `{str(client_err)}`", buttons=retry_btn_kb)
         return
 
-
+# --- Execution Runtime Initialization Loop ---
+async def main():
+    await init_db()
+    await bot.start(bot_token=BOT_TOKEN)
+    logging.info("SKY OTP Master Bot Infrastructure is Online.")
+    await bot.run_until_disconnected()
+    
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.run_until_complete(initialize_database_schema())

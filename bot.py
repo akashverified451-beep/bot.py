@@ -659,9 +659,8 @@ async def cancel_or_deny_click(event):
     event.handled = True
     return
 
-
 # --- Complete High-Speed Error-Free Callback Query Handler ---
-@bot.on(events.CallbackQuery)
+@bot.on(events.CallbackQuery())
 async def callback_handler(event):
     data = event.data.decode('utf-8')
     uid = event.sender_id

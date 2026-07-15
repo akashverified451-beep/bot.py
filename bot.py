@@ -673,7 +673,6 @@ async def callback_handler(event):
     if data == "lbl":
         await event.answer()
         return
-
     # 1. First Step: User clicks a country purchase button
     if data.startswith("buy_tg_"):
         await event.answer("Validating warehouse stock pipeline...", alert=False)
@@ -708,19 +707,17 @@ async def callback_handler(event):
             async with conn.cursor() as cursor:
                 await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts")
                 all_stock = await cursor.fetchall()
-
+                
                 selected_account = None
                 for phone, api_id, api_hash, session_str in all_stock:
                     clean_phone = phone.strip()
                     if not clean_phone.startswith("+"):
                         clean_phone = "+" + clean_phone
                         
-                    # Check North American Region routing flags explicitly
                     if clean_phone.startswith("+1") and len(clean_phone) >= 5:
                         area_code = clean_phone[2:5]
                         account_country = "Canada" if area_code in canada_area_codes else "United States"
                     else:
-                        # Check global international prefixes using LONGEST-FIRST sorting
                         account_country = "Other"
                         for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
                             if clean_phone.startswith(prefix):
@@ -768,7 +765,7 @@ async def callback_handler(event):
                 await cursor.execute("SELECT status FROM active_orders WHERE phone_number = %s", (target_phone,))
                 record = await cursor.fetchone()
                 
-        if not record or not record[0]:
+        if not record:
             await event.edit("❌ **Order Reference Missing:** This order lifecycle session has expired.")
             return
             
@@ -776,7 +773,6 @@ async def callback_handler(event):
         retry_btn_kb = [[Button.inline("🔄 Fetch Code Again", data=f"checkotp:{target_phone}")]]
         
         try:
-            # Create a temporary non-blocking user instance to look up logs
             temp_client = TelegramClient(MemorySession(), int(api_id_val), api_hash_val)
             await temp_client.connect()
             

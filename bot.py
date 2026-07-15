@@ -450,6 +450,7 @@ async def global_message_handler(event):
     ]
 
     # # 7. Dynamically generate rows ordered by available inventory sizing
+    DEFAULT_PRICE = 53.39
     custom_prices = await get_country_prices()
     for country_name, stock_qty in inventory.items():
         flag = country_flags.get(country_name, "🌐")

@@ -763,7 +763,7 @@ if data.startswith("buy_tg_"):
         await event.respond(success_msg, buttons=otp_kb)
         return
 
-           # 2. Second Step: Extract stored data logs and execute instant validation hook
+    # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):
         _, target_phone = data.split(":")
         target_phone = target_phone.strip()

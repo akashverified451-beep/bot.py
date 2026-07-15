@@ -779,56 +779,31 @@ if data.startswith("buy_tg_"):
 
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
-                            # Query active_orders table to fetch backup key details securely
-                            await cursor.execute(
-                                "SELECT status, api_id, api_hash FROM active_orders WHERE phone_number = %s AND uid = %s"
-                                (target_phone, uid)
-                            )
-                            row = await cursor.fetchone()
-                            if row and row[0]:
-                                try:
-                                    api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
-                                except ValueError:
-                                    pass
+                # Query active_orders table to fetch backup key details securely
+                await cursor.execute(
+                    "SELECT status, api_id, api_hash, session_string FROM active_orders WHERE phone_number = %s AND uid = %s",
+                    (target_phone, uid)
+                )
+                row = await cursor.fetchone()
+                
+                if row:
+                    try:
+                        api_id_val = row[1]
+                        api_hash_val = row[2]
+                        session_str_val = row[3]
+                    except (ValueError, IndexError):
+                        pass
 
-                    fetched_otp = "⏳ NO LIVE SMS FOUND YET"
-                    if session_str_val:
-                        try:
-                            from telethon.sessions import StringSession
-
-                            temp_client = TelegramClient(
-                                StringSession(session_str_val),
-                                int(api_id_val),
-                                api_hash_val,
-                                connection_retries=1,
-                                retry_delay=1
-                            )
-
-                    # Fast connection timeout constraint
-                    await asyncio.wait_for(temp_client.connect(), timeout=4.0)
-
-                    if await temp_client.is_user_authorized():
-                        # Scan exclusively the official Telegram notifications user profile
-                        async for msg in temp_client.iter_messages(777000, limit=1):
-                            if msg.text:
-                                otp_match = re.search(r'\b\d{5,6}\b', msg.text)
-                                if otp_match:
-                                    fetched_otp = otp_match.group(0)
-                                else:
-                                    fetched_otp = msg.text[:40]
-                    else:
-                        fetched_otp = "❌ SESSION EXPIRED / TERMINATED"
-                except Exception as e:
-                    logging.error(f"Instant Live Check Fault: {e}")
-                    fetched_otp = "⏳ NO LIVE SMS FOUND YET"
-
+        fetched_otp = "📩 NO LIVE SMS FOUND YET"
+        temp_client = None
+        
         if session_str_val:
             try:
                 from telethon.sessions import StringSession
                 
                 temp_client = TelegramClient(
-                    StringSession(session_str_val), 
-                    int(api_id_val), 
+                    StringSession(session_str_val),
+                    int(api_id_val),
                     api_hash_val,
                     connection_retries=1,
                     retry_delay=1
@@ -848,24 +823,24 @@ if data.startswith("buy_tg_"):
                                 fetched_otp = msg.text[:40]
                 else:
                     fetched_otp = "❌ SESSION EXPIRED / TERMINATED"
-                    
+                
             except Exception as e:
                 logging.error(f"Instant Live Check Fault: {e}")
-                fetched_otp = "⏳ NO LIVE SMS FOUND YET"
+                fetched_otp = "📩 NO LIVE SMS FOUND YET"
                 
             finally:
-                if 'temp_client' in locals() and temp_client.is_connected():
+                if temp_client and await temp_client.is_connected():
                     await temp_client.disconnect()
 
         # Clean display presentation payload without old text lines
         custom_otp_message = (
-            "🇮🇳 India       ₹41.0       ✅\n\n"
+            f"🇮🇳 **India  |  ₹41.0  |  🟢Online**\n\n"
             f"📞 **Phone Number:** `{target_phone}`\n"
-            f"📩 **OTP:** **`{fetched_otp}`**\n\n"
-            "⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
+            f"💬 **OTP:** **{fetched_otp}**\n\n"
+            f"⚠️ **Note:** The Re-Request button is active for 24 hours. After that, you'll need to request a new number."
         )
         
-        retry_btn_kb = [[Button.inline("📩 Check OTP Again", data=data)]]
+        retry_btn_kb = [[Button.inline("🔄 Check OTP Again", data=data)]]
         await event.edit(custom_otp_message, buttons=retry_btn_kb)
         return
 
@@ -876,6 +851,6 @@ async def main():
     logging.info("SKY OTP Master Bot Infrastructure is Online.")
     await bot.run_until_disconnected()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import asyncio
     asyncio.run(main())

@@ -504,36 +504,32 @@ async def global_message_handler(event):
 
     
     # Handle Screenshot Uploads
-@bot.on(events.CallbackQuery(data=b'add_funds_process'))
-async def handle_add_funds_click(event):
-    # 1. UNLOCK THE TELEGRAM INTERFACE INSTANTLY
-    await event.answer() 
-    
+@bot.on(events.NewMessage(func=lambda e: e.photo))
+async def handle_screenshot_uploads(event):
     uid = event.sender_id
-    import random
-    txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
-    claim_id = str(random.randint(1000, 9999))
-
+    
     async with await get_db_connection() as conn:
         async with conn.cursor() as cursor:
-            await cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
-            await conn.commit()
+            await cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = %s ORDER BY claim_id DESC LIMIT 1", (uid,))
+            row = await cursor.fetchone()
+            
+            if not row:
+                await event.respond("❌ You don't have any active deposit generation requests open. Please click '➕ Add Funds' first.")
+                return
 
-    qr_url = f"https://qrserver.com"
-
-    cap = (
-        "🍏 <b>Welcome to the Deposit System</b>\n\n"
-        "Scan the QR code below and pay.\n\n"
-        "⚠️ After making the payment, please send the payment screenshot here."
-    )
-    
-    await event.respond(
-        cap,
-        file=qr_url,
-        buttons=[[Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]],
-        parse_mode='html'
-    )
-    raise events.StopPropagation
+            claim_id, txn = row[0], row[1]
+            await event.respond("🍏 <b>Screenshot Received!</b>\n\nYour proof has been sent to the admin for manual verification.", parse_mode='html')
+            
+            akb = [
+                [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
+                [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
+                [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
+                [Button.inline("✅ Confirm & Send", data=f"send:{claim_id}")],
+                [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
+            ]
+            
+            admin_text = f"🪪 <b>New Deposit Claim!</b>\n\n👤 User: <code>{uid}</code>\n📝 TXN Ref: <code>{txn}</code>"
+            await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
 
 
 # --- Admin Callback Button Processors ---
@@ -641,42 +637,35 @@ async def cancel_or_deny_click(event):
 # --- ADD FUNDS WALLET PAYMENT PROCESSOR ---
 @bot.on(events.CallbackQuery(data=b'add_funds_process'))
 async def handle_add_funds_click(event):
-    uid = event.sender_id
+    # 1. UNLOCK THE TELEGRAM INTERFACE INSTANTLY
+    await event.answer() 
     
-    # 1. Initialize transient generation assets safely
-    import random, io, qrcode
+    uid = event.sender_id
+    import random
     txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
     claim_id = str(random.randint(1000, 9999))
 
-    # 2. Write the pending transaction token securely to the tracking database
     async with await get_db_connection() as conn:
         async with conn.cursor() as cursor:
             await cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
             await conn.commit()
 
-    # 3. Dynamic layout buffer generation for the vendor QR image stream
-    # ⚠️ REPLACE YOUR_UPI_ID WITH YOUR ACTUAL MERCH_ID (e.g., business@ybl)
-    img = qrcode.make(f"upi://pay?pa=YOUR_UPI_ID&pn=SKY_OTP&cu=INR")
-    buf = io.BytesIO()
-    img.save(buf, format='PNG')
-    buf.seek(0)
-    buf.name = "qr.png"
+    qr_url = f"https://qrserver.com"
 
-    # 4. Compile customer instructional display layout
     cap = (
         "🍏 <b>Welcome to the Deposit System</b>\n\n"
         "Scan the QR code below and pay.\n\n"
         "⚠️ After making the payment, please send the payment screenshot here."
     )
     
-    # 5. Route asset payload directly to client terminal view
     await event.respond(
         cap,
-        file=buf,
+        file=qr_url,
         buttons=[[Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]],
         parse_mode='html'
     )
     raise events.StopPropagation
+
 
 # --- Complete High-Speed Error-Free Callback Query Handler ---
 @bot.on(events.CallbackQuery)

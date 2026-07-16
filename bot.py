@@ -346,11 +346,12 @@ async def global_message_handler(event):
         return
 
     # 2. Handle Wallet Button
-    elif text == "💼 Wallet":
+    if text == "💼 Wallet":
         bal = await get_user_bal(uid)
         await event.respond(f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", buttons=balance_kb(), parse_mode='html')
         event.handled = True
         return
+        
     # 3. Handle Profile Button
     elif text == "👤 User Profile":
         bal = await get_user_bal(uid)
@@ -358,15 +359,16 @@ async def global_message_handler(event):
         await event.respond(f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{bal}\n📅 <b>Join Date:</b> {jd}", parse_mode='html')
         event.handled = True
         return
-# Handle Back Button Action cleanly
-elif text == "🔙 Back to Main Menu":
-    try:
-        await event.respond("👋 Welcome back! Select an option from the menu below:", buttons=main_kb())
-    except Exception as menu_err:
-        logging.error(f"Error drawing main menu view: {menu_err}")
-    event.handled = True
-    return
-
+        
+    # Handle Back Button Action cleanly
+    elif text == "🔙 Back to Main Menu":
+        try:
+            await event.respond("👋 Welcome back! Select an option from the menu below:", buttons=...)
+        except Exception as menu_err:
+            logging.error(f"Error drawing main menu view: {menu_err}")
+        event.handled = True
+        return
+        
 # 5. Handle Buy Telegram Account Button
 elif text == "🛍 Buy Telegram Account":
     custom_prices = await get_country_prices()

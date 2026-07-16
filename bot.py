@@ -580,6 +580,7 @@ async def admin_add_click(event):
             session_amt = row[2]
             new_session_amt = session_amt + add_amt
 
+
             
             # Update the temporary claim total and add the balance directly to the user
             await cursor.execute("UPDATE claims SET session_amt = %s WHERE claim_id = %s", (new_session_amt, str(claim_id)))

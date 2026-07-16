@@ -371,12 +371,11 @@ async def global_message_handler(event):
         return
 
     
-     # 5. Handle Buy Telegram Account Button
+    # 5. Handle Buy Telegram Account Button
     if text == "🛍 Buy Telegram Account":
         custom_prices = await get_country_prices()
         DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
 
-        
         # 2. Automated Country-to-Emoji Flag
         country_flags = {
             "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩",
@@ -387,7 +386,6 @@ async def global_message_handler(event):
             "Japan": "🇯🇵", "Nepal": "🇳🇵", "Myanmar": "🇲🇲"
         }
 
-        
         # 3. Dynamic Phone Prefix Map Identification
         prefix_to_country = {
             "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh",
@@ -397,7 +395,6 @@ async def global_message_handler(event):
             "+977": "Nepal", "+95": "Myanmar"
         }
 
-        
         # List of known Canadian Area Codes
         canada_area_codes = [
             "204", "226", "236", "249", "250",
@@ -406,10 +403,10 @@ async def global_message_handler(event):
             "825", "867", "873", "902", "905"
         ]
 
-                async with await get_db_connection() as conn:
-                    async with conn.cursor() as cursor:
-                        await cursor.execute("SELECT phone_number FROM available_accounts")
-                        all_numbers = await cursor.fetchall()
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT phone_number FROM available_accounts")
+                all_numbers = await cursor.fetchall()
 
         inventory = {}
         for (phone_num,) in all_numbers:
@@ -434,6 +431,7 @@ async def global_message_handler(event):
             event.handled = True
             return
 
+
         tg_services_kb = [
             [
                 Button.inline("🇺🇳 Country", data="lbl"),
@@ -442,7 +440,6 @@ async def global_message_handler(event):
             ]
 
     ]
-
  
     # 7. Dynamically generate rows ordered by available inventory sizing
     for country_name, stock_qty in inventory.items():

@@ -425,12 +425,12 @@ async def global_message_handler(event):
         detected_country = detected_country.strip()
         inventory[detected_country] = inventory.get(detected_country, 0) + 1
 
-        if not inventory:
+    if not inventory:
         await event.respond("⚠ **Storefront Notice:**\n\n There are currently no active accounts in stock.")
         event.handled = True
         return
 
-        tg_services_kb = [
+    tg_services_kb = [
         [
             Button.inline("🌍 Country", data="lbl"),
             Button.inline("💰 Price", data="lbl"),

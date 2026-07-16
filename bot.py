@@ -375,10 +375,10 @@ async def global_message_handler(event):
         return
 
     # 5. Handle Buy Telegram Account Button (Using loose catch-all matching)
-    elif "Buy Telegram Account" in text or "🛍" in text:
-        await send_telegram_services_menu(event)
-        event.handled = True
-        return
+elif "Buy Telegram Account" in text or "🛍️" in text:
+    await send_telegram_services_menu(event)
+    event.handled = True
+    raise events.StopPropagation  # 💡 CRITICAL: This tells Telethon to stop completely and ignore other handlers
 
         # 2. Automated Country-to-Emoji Flag
         country_flags = {

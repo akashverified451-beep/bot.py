@@ -370,9 +370,9 @@ async def global_message_handler(event):
         return
         
     # 5. Handle Buy Telegram Account Button
-    if text == "🛍 Buy Telegram Account":
-        custom_prices = await get_country_prices()
-        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+        if text == "🛍 Buy Telegram Account":
+            custom_prices = await get_country_prices()
+            DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
 
         # 2. Automated Country-to-Emoji Flag
         country_flags = {

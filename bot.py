@@ -363,10 +363,12 @@ async def global_message_handler(event):
     # Handle Back Button Action cleanly
     elif "Back to Main Menu" in text or "Back" in text:
         await event.respond(
-            "👋 Hello! Welcome to SKY OTP Bot.\n\n✨ Use the buttons below to explore our services.",
+            "Please use the menu 👇",
             buttons=[
-                [Button.text("🛍 Buy Telegram Account", resize=True), Button.text("💼 Wallet", resize=True)],
-                [Button.text("👤 Profile", resize=True)]
+                [Button.text("🛍️ Buy Telegram Account", resize=True)],
+                [Button.text("💬 Buy Whatsapp OTP", resize=True)],
+                [Button.text("💼 Wallet", resize=True), Button.text("👤 User Profile", resize=True)],
+                [Button.text("🆘 Support", resize=True), Button.text("🔑 Promocode", resize=True)]
             ]
         )
         event.handled = True

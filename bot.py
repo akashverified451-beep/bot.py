@@ -332,7 +332,7 @@ async def global_message_handler(event):
 
 
 
- # 1. Handle /start Command
+    # 1. Handle /start Command
     if text.startswith("/start"):
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
@@ -369,10 +369,10 @@ async def global_message_handler(event):
         event.handled = True
         return
         
-# 5. Handle Buy Telegram Account Button
-elif text == "🛍 Buy Telegram Account":
-    custom_prices = await get_country_prices()
-    DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+    # 5. Handle Buy Telegram Account Button
+    elif text == "🛍 Buy Telegram Account":
+        custom_prices = await get_country_prices()
+        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
 
         # 2. Automated Country-to-Emoji Flag
         country_flags = {

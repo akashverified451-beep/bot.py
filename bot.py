@@ -402,32 +402,26 @@ async def global_message_handler(event):
         ]
     
         async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("SELECT phone_number FROM available_accounts")
-                all_numbers = await cursor.fetchall()
+      async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT phone_number FROM available_accounts")
+            all_numbers = await cursor.fetchall()
 
-        inventory = {}
-        for (phone_num,) in all_numbers:
-        if not phone_num:
-            continue
+    inventory = {}
+    for (phone_num,) in all_numbers:
+        if not phone_num: continue
         clean_phone = phone_num.strip()
-
-        if not clean_phone.startswith("+"):
-            clean_phone = "+" + clean_phone
+        if not clean_phone.startswith("+"): clean_phone = "+" + clean_phone
         detected_country = "Other International"
-
         if clean_phone.startswith("+1") and len(clean_phone) >= 5:
             area_code = clean_phone[2:5]
-            if area_code in canada_area_codes:
-                detected_country = "Canada"
-            else:
-                detected_country = "United States"
+            if area_code in canada_area_codes: detected_country = "Canada"
+            else: detected_country = "United States"
         else:
             for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
                 if clean_phone.startswith(prefix):
                     detected_country = prefix_to_country[prefix]
                     break
-
         detected_country = detected_country.strip()
         inventory[detected_country] = inventory.get(detected_country, 0) + 1
 

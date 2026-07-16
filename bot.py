@@ -370,9 +370,9 @@ async def global_message_handler(event):
         return
         
     # 5. Handle Buy Telegram Account Button
-    elif text == "🛍 Buy Telegram Account":
-        custom_prices = await get_country_prices()
-        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+    if text == "🛍 Buy Telegram Account":
+      custom_prices = await get_country_prices()
+      DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
 
         # 2. Automated Country-to-Emoji Flag
         country_flags = {
@@ -401,13 +401,13 @@ async def global_message_handler(event):
             "825", "867", "873", "902", "905"
         ]
     
-    async with await get_db_connection() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT phone_number FROM available_accounts")
-            all_numbers = await cursor.fetchall()
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT phone_number FROM available_accounts")
+                all_numbers = await cursor.fetchall()
 
-    inventory = {}
-    for (phone_num,) in all_numbers:
+        inventory = {}
+        for (phone_num,) in all_numbers:
         if not phone_num:
             continue
         clean_phone = phone_num.strip()
@@ -431,12 +431,12 @@ async def global_message_handler(event):
         detected_country = detected_country.strip()
         inventory[detected_country] = inventory.get(detected_country, 0) + 1
 
-    if not inventory:
+        if not inventory:
         await event.respond("⚠ **Storefront Notice:**\n\n There are currently no active accounts in stock.")
         event.handled = True
         return
 
-    tg_services_kb = [
+        tg_services_kb = [
         [
             Button.inline("🌍 Country", data="lbl"),
             Button.inline("💰 Price", data="lbl"),
@@ -458,9 +458,9 @@ async def global_message_handler(event):
         ]
         tg_services_kb.append(country_row)
 
-    await event.respond("📊 **Available Telegram Services**", buttons=tg_services_kb)
-    event.handled = True
-    return
+        await event.respond("📊 **Available Telegram Services**", buttons=tg_services_kb)
+        event.handled = True
+        return
 
     # # 6. Handle Buy Whatsapp OTP Button
     if text == "🛍 Buy Whatsapp OTP":

@@ -359,7 +359,8 @@ async def global_message_handler(event):
         await event.respond(f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{bal}\n📅 <b>Join Date:</b> {jd}", parse_mode='html')
         event.handled = True
         return
-        
+
+    
     # Handle Back Button Action cleanly
     elif text == "🔙 Back to Main Menu":
         try:
@@ -368,12 +369,14 @@ async def global_message_handler(event):
             logging.error(f"Error drawing main menu view: {menu_err}")
         event.handled = True
         return
-        
-    # 5. Handle Buy Telegram Account Button
-        if text == "🛍 Buy Telegram Account":
-            custom_prices = await get_country_prices()
-            DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
 
+    
+     # 5. Handle Buy Telegram Account Button
+    if text == "🛍 Buy Telegram Account":
+        custom_prices = await get_country_prices()
+        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+
+        
         # 2. Automated Country-to-Emoji Flag
         country_flags = {
             "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩",
@@ -384,6 +387,7 @@ async def global_message_handler(event):
             "Japan": "🇯🇵", "Nepal": "🇳🇵", "Myanmar": "🇲🇲"
         }
 
+        
         # 3. Dynamic Phone Prefix Map Identification
         prefix_to_country = {
             "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh",
@@ -393,6 +397,7 @@ async def global_message_handler(event):
             "+977": "Nepal", "+95": "Myanmar"
         }
 
+        
         # List of known Canadian Area Codes
         canada_area_codes = [
             "204", "226", "236", "249", "250",
@@ -400,42 +405,45 @@ async def global_message_handler(event):
             "604", "613", "639", "647", "705",
             "825", "867", "873", "902", "905"
         ]
-            async with await get_db_connection() as conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute("SELECT phone_number FROM available_accounts")
-                    all_numbers = await cursor.fetchall()
 
-    inventory = {}
-    for (phone_num,) in all_numbers:
-        if not phone_num: continue
-        clean_phone = phone_num.strip()
-        if not clean_phone.startswith("+"): clean_phone = "+" + clean_phone
-        detected_country = "Other International"
-        if clean_phone.startswith("+1") and len(clean_phone) >= 5:
-            area_code = clean_phone[2:5]
-            if area_code in canada_area_codes: detected_country = "Canada"
-            else: detected_country = "United States"
-        else:
-            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-                if clean_phone.startswith(prefix):
-                    detected_country = prefix_to_country[prefix]
-                    break
-        detected_country = detected_country.strip()
-        inventory[detected_country] = inventory.get(detected_country, 0) + 1
+                async with await get_db_connection() as conn:
+                    async with conn.cursor() as cursor:
+                        await cursor.execute("SELECT phone_number FROM available_accounts")
+                        all_numbers = await cursor.fetchall()
 
-    if not inventory:
-        await event.respond("⚠ **Storefront Notice:**\n\n There are currently no active accounts in stock.")
-        event.handled = True
-        return
+        inventory = {}
+        for (phone_num,) in all_numbers:
+            if not phone_num: continue
+            clean_phone = phone_num.strip()
+            if not clean_phone.startswith("+"): clean_phone = "+" + clean_phone
+            detected_country = "Other International"
+            if clean_phone.startswith("+1") and len(clean_phone) >= 5:
+                area_code = clean_phone[2:5]
+                if area_code in canada_area_codes: detected_country = "Canada"
+                else: detected_country = "United States"
+            else:
+                for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                    if clean_phone.startswith(prefix):
+                        detected_country = prefix_to_country[prefix]
+                        break
+            detected_country = detected_country.strip()
+            inventory[detected_country] = inventory.get(detected_country, 0) + 1
 
-    tg_services_kb = [
-        [
-            Button.inline("🌍 Country", data="lbl"),
-            Button.inline("💰 Price", data="lbl"),
-            Button.inline("📦 Stock", data="lbl")
-        ]
+        if not inventory:
+            await event.respond("⚠️ **Storefront Notice:**\n\nThere are currently no active accounts in stock.")
+            event.handled = True
+            return
+
+        tg_services_kb = [
+            [
+                Button.inline("🇺🇳 Country", data="lbl"),
+                Button.inline("💵 Price", data="lbl"),
+                Button.inline("📦 Stock", data="lbl"),
+            ]
+
     ]
 
+ 
     # 7. Dynamically generate rows ordered by available inventory sizing
     for country_name, stock_qty in inventory.items():
         flag = country_flags.get(country_name, "🇺🇳")

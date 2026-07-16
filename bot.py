@@ -493,29 +493,40 @@ async def independent_buy_handler(event):
     
     # Handle Add Funds Button
     elif text == "➕ Add Funds":
-        txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
-        claim_id = str(random.randint(1000, 9999))
-        
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
-                await conn.commit()
-        
-        img = qrcode.make(f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR")
-        buf = io.BytesIO()
-        img.save(buf, format='PNG')
-        buf.seek(0)
-        buf.name = "qr.png" 
-        
-        # ✅ UPDATED: Message formatting updated as requested
-        cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay.\n\n⚠️ After making the payment, simply upload your Payment Screenshot for verification the payment.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
-        
-        await event.respond(
-            cap,
-            file=buf,
-            buttons=[[Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]],
-            parse_mode='html'
-        )
+        try:
+            import random
+            uid = event.sender_id
+            txn = "".join([str(random.randint(0, 9)) for _ in range(12)])
+            claim_id = str(random.randint(1000, 9999))
+
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute(
+                        "INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", 
+                        (claim_id, uid, txn)
+                    )
+                    await conn.commit()
+
+            # Set your actual UPI ID string here instead of variables inside the QR payload
+            upi_id_string = "skyotpprovider@axisbank" 
+            img = qrcode.make(f"upi://pay?pa={upi_id_string}&pn=SKY_OTP&cu=INR")
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+            buf.name = "qr.png"
+
+            # UPDATED: Message formatting updated as requested
+            cap = f"Welcome to the Deposit System\n\nScan the QR code below to add funds."
+
+            await event.respond(
+                cap,
+                file=buf,
+                buttons=[[Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]],
+                parse_mode='html'
+            )
+        except Exception as error:
+            await event.respond(f"❌ **Deposit Operational Error:** `{str(error)}`")
+
     
     # Handle Screenshot Uploads
     elif event.photo:

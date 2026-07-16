@@ -517,7 +517,7 @@ if text == "➕ Add Funds":
         )
     
     # Handle Screenshot Uploads
-    elif event.photo:
+    if event.photo:
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = %s ORDER BY claim_id DESC LIMIT 1", (uid,))

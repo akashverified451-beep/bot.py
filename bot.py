@@ -361,14 +361,17 @@ async def global_message_handler(event):
         return
    
     # Handle Back Button Action cleanly
-    elif text == "🔙 Back to Main Menu":
-        try:
-            await event.respond("👋 Welcome back! Select an option from the menu below:", buttons=...)
-        except Exception as menu_err:
-            logging.error(f"Error drawing main menu view: {menu_err}")
+    elif "Back to Main Menu" in text or "Back" in text:
+        await event.respond(
+            "👋 Hello! Welcome to SKY OTP Bot.\n\n✨ Use the buttons below to explore our services.",
+            buttons=[
+                [Button.text("🛍 Buy Telegram Account", resize=True), Button.text("💼 Wallet", resize=True)],
+                [Button.text("👤 Profile", resize=True)]
+            ]
+        )
         event.handled = True
         return
-    
+
     # 5. Handle Buy Telegram Account Button (Using loose catch-all matching)
     elif "Buy Telegram Account" in text or "🛍" in text:
         await send_telegram_services_menu(event)
@@ -486,7 +489,7 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-    if text == "➕ Add Funds":
+    elif "Add Funds" in text or "➕" in text:
         txn = "".join([str(random.randint(0, 9)) for _ in range(10)])
         claim_id = str(random.randint(1000, 9999))
 
@@ -494,16 +497,16 @@ async def global_message_handler(event):
             async with conn.cursor() as cursor:
                 await cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
                 await conn.commit()
-        
-        img = qrcode.make(f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR")
+
+        img = qrcode.make(f"upi://pay?pa={{YOUR_UPI_ID}}&pn=SKY_OTP&cu=INR")
         buf = io.BytesIO()
         img.save(buf, format='PNG')
         buf.seek(0)
-        buf.name = "qr.png" 
-        
-        # ✅ UPDATED: Message formatting updated as requested
-        cap = f"👋 <b>Welcome to the Deposit System</b>\n\nScan the QR code below and pay.\n\n⚠️ After making the payment, simply upload your Payment Screenshot for verification the payment.\n\n📌 <b>Transaction Reference:</b>\n<code>{txn}</code>"
-        
+        buf.name = "qr.png"
+
+        # 🟢 UPDATED: Message formatting updated as requested
+        cap = "<b>Welcome to the Deposit System</b>\n\nScan the QR code below to proceed."
+
         await event.respond(
             cap,
             file=buf,

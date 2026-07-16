@@ -402,10 +402,10 @@ async def global_message_handler(event):
         ]
     
         async with await get_db_connection() as conn:
-      async with await get_db_connection() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT phone_number FROM available_accounts")
-            all_numbers = await cursor.fetchall()
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT phone_number FROM available_accounts")
+                    all_numbers = await cursor.fetchall()
 
     inventory = {}
     for (phone_num,) in all_numbers:

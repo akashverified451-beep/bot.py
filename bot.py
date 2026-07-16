@@ -359,8 +359,7 @@ async def global_message_handler(event):
         await event.respond(f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{bal}\n📅 <b>Join Date:</b> {jd}", parse_mode='html')
         event.handled = True
         return
-
-    
+   
     # Handle Back Button Action cleanly
     elif text == "🔙 Back to Main Menu":
         try:
@@ -369,12 +368,12 @@ async def global_message_handler(event):
             logging.error(f"Error drawing main menu view: {menu_err}")
         event.handled = True
         return
-
     
-    # 5. Handle Buy Telegram Account Button
-    if text == "🛍 Buy Telegram Account":
-        custom_prices = await get_country_prices()
-        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+    # 5. Handle Buy Telegram Account Button (Using loose catch-all matching)
+    elif "Buy Telegram Account" in text or "🛍" in text:
+        await send_telegram_services_menu(event)
+        event.handled = True
+        return
 
         # 2. Automated Country-to-Emoji Flag
         country_flags = {
@@ -880,7 +879,86 @@ async def callback_handler(event):
         except Exception as general_err:
             logging.error(f"Global error inside checkotp handler: {general_err}")
 
+async def send_telegram_services_menu(event):
+    try:
+        custom_prices = await get_country_prices()
+        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
 
+        country_flags = {
+            "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩",
+            "Canada": "🇨🇦", "United States": "🇺🇸", "India": "🇮🇳",
+            "Ethiopia": "🇪🇹", "Egypt": "🇪🇬", "Iran": "🇮🇷",
+            "Pakistan": "🇵🇰", "Indonesia": "🇮🇩", "Kenya": "🇰🇪",
+            "Chile": "🇨🇱", "Togo": "🇹🇬", "Angola": "🇦🇴",
+            "Japan": "🇯🇵", "Nepal": "🇳🇵", "Myanmar": "🇲🇲"
+        }
+
+        prefix_to_country = {
+            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh",
+            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran",
+            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya",
+            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan",
+            "+977": "Nepal", "+95": "Myanmar"
+        }
+
+        canada_area_codes = [
+            "204", "226", "236", "249", "250",
+            "431", "437", "438", "450", "506",
+            "604", "613", "639", "647", "705",
+            "825", "867", "873", "902", "905"
+        ]
+
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT phone_number FROM available_accounts")
+                all_numbers = await cursor.fetchall()
+
+        inventory = {}
+        for (phone_num,) in all_numbers:
+            if not phone_num: continue
+            clean_phone = phone_num.strip()
+            if not clean_phone.startswith("+"): clean_phone = "+" + clean_phone
+            detected_country = "Other International"
+            if clean_phone.startswith("+1") and len(clean_phone) >= 5:
+                area_code = clean_phone[2:5]
+                if area_code in canada_area_codes: detected_country = "Canada"
+                else: detected_country = "United States"
+            else:
+                for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                    if clean_phone.startswith(prefix):
+                        detected_country = prefix_to_country[prefix]
+                        break
+            detected_country = detected_country.strip()
+            inventory[detected_country] = inventory.get(detected_country, 0) + 1
+
+        if not inventory:
+            await event.respond("⚠️ **Storefront Notice:**\n\nThere are currently no active accounts in stock.")
+            return
+
+        # Dynamically build the menu layout rows
+        tg_services_kb = [[
+            Button.inline("🇺🇳 Country", data="lbl"),
+            Button.inline("💵 Price", data="lbl"),
+            Button.inline("📦 Stock", data="lbl")
+        ]]
+        
+        for country_name, stock_qty in inventory.items():
+            flag = country_flags.get(country_name, "🏳️")
+            price = custom_prices.get(country_name, DEFAULT_PRICE)
+            callback_payload = f"buy_tg_{country_name}"
+            
+            tg_services_kb.append([
+                Button.inline(f"{flag} {country_name}", data=callback_payload),
+                Button.inline(f"₹{price:.1f}", data=callback_payload),
+                Button.inline(f"[{stock_qty}] ✅", data=callback_payload)
+            ])
+
+        await event.respond("📊 **Available Telegram Services**", buttons=tg_services_kb)
+
+    except Exception as e:
+        import logging
+        logging.error(f"Error executing helper menu: {e}")
+        await event.respond("❌ Critical Error generating stock layout.")
 
 # --- Execution Runtime Initialization Loop ---
 async def main():

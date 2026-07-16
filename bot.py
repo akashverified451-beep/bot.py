@@ -351,7 +351,6 @@ async def global_message_handler(event):
         await event.respond(f"💼 <b>Wallet Dashboard</b>\n\n💰 Balance: <b>₹{bal}</b>\n\nPlease select your funding process.", buttons=balance_kb(), parse_mode='html')
         event.handled = True
         return
-    
     # 3. Handle Profile Button
     elif text == "👤 User Profile":
         bal = await get_user_bal(uid)
@@ -359,7 +358,6 @@ async def global_message_handler(event):
         await event.respond(f"👤 <b>Your Profile Summary</b>\n\n🆔 <b>User ID:</b> <code>{uid}</code>\n💰 <b>Balance:</b> ₹{bal}\n📅 <b>Join Date:</b> {jd}", parse_mode='html')
         event.handled = True
         return
-  
     # Handle Back Button Action cleanly
     elif text == "🔙 Back to Main Menu":
         try:
@@ -368,10 +366,9 @@ async def global_message_handler(event):
             logging.error(f"Error drawing main menu view: {menu_err}")
         event.handled = True
         return
+    # 5. Handle Buy Telegram Account Button
+    elif text == "🛍 Buy Telegram Account":
 
-    # # 5. Handle Buy Telegram Account Button
-        elif text == "🛍️ Buy Telegram Account":
-        try:
             # 1. Global Price Rule Configuration
             custom_prices = await get_country_prices()
             DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)

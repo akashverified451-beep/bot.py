@@ -462,43 +462,42 @@ async def global_message_handler(event):
     event.handled = True
     return
 
-# # 6. Handle Buy Whatsapp OTP Button
-if text == "🛍 Buy Whatsapp OTP":
-    await event.respond("<b>Live Whatsapp OTP Service...</b>")
-    event.handled = True
-    return
+    # # 6. Handle Buy Whatsapp OTP Button
+    if text == "🛍 Buy Whatsapp OTP":
+        await event.respond("<b>Live Whatsapp OTP Service...</b>")
+        event.handled = True
+        return
 
-# # 7. Handle Promocode Button
-if text == "🎁 Promocode":
-    promo_msg = (
-        "<b>Follow me on Instagram to get promo codes</b>\n"
-        "⬇️ <b>Instagram Profile:</b>\n"
-        "<a href='https://instagram.com'>Click Here</a>"
-    )
-    await event.respond(promo_msg, parse_mode='html')
-    event.handled = True
-    return
+    # # 7. Handle Promocode Button
+    if text == "🎟 Promocode":
+        promo_msg = (
+            "<b>Follow me on Instagram to get promo codes</b>\n"
+            "⬇️ <b>Instagram Profile:</b>\n"
+            "<a href='https://instagram.com'>Click Here</a>"
+        )
+        await event.respond(promo_msg, parse_mode='html')
+        event.handled = True
+        return
 
-# # 8. Handle Support Button with Professional Care
-if text == "🆘 Support":
-    support_msg = (
-        "✈️ <b>To contact our official support:</b>\n"
-        "📱 <b>Telegram ID:</b> @Sky_Verified\n"
-        "⏰ <b>Working Hours:</b> 10:00 AM to ..."
-    )
-    await event.respond(support_msg, parse_mode='html')
-    event.handled = True
-    return
+    # # 8. Handle Support Button with Professional Care
+    if text == "🆘 Support":
+        support_msg = (
+            "❌ <b>To contact our official support:</b>\n"
+            "🗣 <b>Telegram ID:</b> @Sky_Verified\n"
+            "⏰ <b>Working Hours:</b> 10:00 AM to ..."
+        )
+        await event.respond(support_msg, parse_mode='html')
+        event.handled = True
+        return
 
-if text == "➕ Add Funds":
-    txn = "".join([str(random.randint(0, 9))])
-    claim_id = str(random.randint(1000, 9999))
+    if text == "➕ Add Funds":
+        txn = "".join([str(random.randint(0, 9)) for _ in range(10)])
+        claim_id = str(random.randint(1000, 9999))
 
-        
-    async with await get_db_connection() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
-            await conn.commit()
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
+                await conn.commit()
         
         img = qrcode.make(f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR")
         buf = io.BytesIO()

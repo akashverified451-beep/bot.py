@@ -463,13 +463,13 @@ async def global_message_handler(event):
     return
 
 # # 6. Handle Buy Whatsapp OTP Button
-elif text == "🛍 Buy Whatsapp OTP":
+if text == "🛍 Buy Whatsapp OTP":
     await event.respond("<b>Live Whatsapp OTP Service...</b>")
     event.handled = True
     return
 
 # # 7. Handle Promocode Button
-elif text == "🎁 Promocode":
+if text == "🎁 Promocode":
     promo_msg = (
         "<b>Follow me on Instagram to get promo codes</b>\n"
         "⬇️ <b>Instagram Profile:</b>\n"
@@ -480,7 +480,7 @@ elif text == "🎁 Promocode":
     return
 
 # # 8. Handle Support Button with Professional Care
-elif text == "🆘 Support":
+if text == "🆘 Support":
     support_msg = (
         "✈️ <b>To contact our official support:</b>\n"
         "📱 <b>Telegram ID:</b> @Sky_Verified\n"

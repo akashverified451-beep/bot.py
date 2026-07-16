@@ -528,7 +528,7 @@ async def robust_add_funds_handler(event):
 
     
     # Handle Screenshot Uploads
-    elif event.photo:
+    if event.photo:
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = %s ORDER BY claim_id DESC LIMIT 1", (uid,))
@@ -553,17 +553,18 @@ async def robust_add_funds_handler(event):
         await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
 
 # --- Admin Callback Button Processors ---
-@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"add:")))
+@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b'add:')))
 async def admin_add_click(event):
     if event.sender_id != ADMIN_TELEGRAM_ID:
         return
-    
+
+    # FIXED: Indented 4 spaces forward to be inside the function scope
     await event.answer()  # Stops the loading spinner instantly
-    
+
     data_str = event.data.decode('utf-8')
-    _, claim_id, add_amt = data_str.split(":")
+    claim_id, add_amt = data_str.split(':')
     add_amt = int(add_amt)
-    
+
     async with await get_db_connection() as conn:
         async with conn.cursor() as cursor:
             await cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = %s", (str(claim_id),))
@@ -572,12 +573,13 @@ async def admin_add_click(event):
             if not row:
                 await event.edit("❌ This claim has expired or was already closed.")
                 return
-                
-            # ✅ FIXED: Correct and safe indexing for tuple fields
+
+            # FIXED: Correct and safe indexing for tuple fields
             uid = row[0]
             txn = row[1]
             session_amt = row[2]
             new_session_amt = session_amt + add_amt
+
             
             # Update the temporary claim total and add the balance directly to the user
             await cursor.execute("UPDATE claims SET session_amt = %s WHERE claim_id = %s", (new_session_amt, str(claim_id)))

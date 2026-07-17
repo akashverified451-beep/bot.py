@@ -223,10 +223,8 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-
-
     # Admin Quick Price Modifier Command
-    if text.startswith("/updateprice") and uid == ADMIN_TELEGRAM_ID:
+    if (text.startswith("/updateprice") or text.startswith("/updatestock")) and uid == ADMIN_TELEGRAM_ID:
         try:
             # Expected format: /updateprice CountryName,Price
             if " " not in text:
@@ -413,7 +411,7 @@ async def global_message_handler(event):
             # Header Row
             tg_services_kb = [
                 [
-                    Button.inline("🇺🇳 Country", data="lbl"),
+                    Button.inline("🌍 Country", data="lbl"),
                     Button.inline("💵 Price", data="lbl"),
                     Button.inline("📦 Stock", data="lbl")
                 ]
@@ -421,7 +419,7 @@ async def global_message_handler(event):
             
             # Dynamic Rows (Safely under 64-byte payload limits)
             for country_name, stock_qty in inventory.items():
-                flag = country_flags.get(country_name, "🇺🇳")
+                flag = country_flags.get(country_name, "🌍")
                 price = custom_prices.get(country_name, DEFAULT_PRICE)
                 
                 # Truncate callback payloads heavily to avoid exceeding Telegram limits
@@ -840,7 +838,7 @@ async def callback_handler(event):
                     await conn.commit()
 
             # Delivery message triggers outside the connection loop after successful commit
-            display_flag = country_flags.get(detected_country_name, "🇺🇳")
+            display_flag = country_flags.get(detected_country_name, "🌍")
             success_msg = (
                 f"🌐 **Number reserved successfully**\n\n"
                 f"📱 **Phone:** `{phone_to_buy}`\n"
@@ -1040,7 +1038,7 @@ async def send_telegram_services_menu(event):
 
         # Dynamically build the menu layout rows
         tg_services_kb = [[
-            Button.inline("🇺🇳 Country", data="lbl"),
+            Button.inline("🌍 Country", data="lbl"),
             Button.inline("💵 Price", data="lbl"),
             Button.inline("📦 Stock", data="lbl")
         ]]

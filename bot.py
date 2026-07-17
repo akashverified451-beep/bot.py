@@ -122,106 +122,109 @@ async def global_message_handler(event):
     except Exception as e:
         logging.error(f"User check-in database error: {e}")
 
-    # Admin Stock Adder Command with Integrated Live Price Configuration Matrix
-    if text.startswith("/addstock") and uid == ADMIN_TELEGRAM_ID:
-        try:
-            if " " not in text:
-                await event.respond("❌ **Format mismatch!** Use: `/addstock phone,api_id,api_hash,session_string,price`")
-                event.handled = True
-                return
+# ==========================================
+# CLEAN REPAIRED /addstock COMMAND HANDLER
+# ==========================================
+if text.startswith("/addstock") and uid == ADMIN_TELEGRAM_ID:
+    try:
+        raw_args = text.replace("/addstock", "").strip()
+        
+        # Vaporize hidden lines and accidental spaces instantly
+        cleaned_args = "".join(raw_args.split())
+        args_list = cleaned_args.split(",")
+        
+        if len(args_list) < 4:
+            raise ValueError("Insufficient arguments provided.")
 
-            command_args = text.split(" ", 1)[1]
-            args_list = command_args.split(",")
-            
-            if len(args_list) < 4:
-                raise ValueError("Insufficient arguments provided.")
-                
-            phone = args_list[0].strip()
-            api_id_val = args_list[1].strip()
-            api_hash_val = args_list[2].strip()
-            session_str = args_list[3].strip()
-            
-            # Detect optional trailing pricing variable argument parameter
-            set_custom_price = None
-            if len(args_list) >= 5:
-                set_custom_price = float(args_list[4].strip())
-            
-            progress_msg = await event.respond("⏳ **Verifying login credentials against Telegram servers...**")
-            
-            # 1. Spawn temporary runtime client to validate authentication safety
-            temp_client = TelegramClient(
-                StringSession(session_str), 
-                int(api_id_val), 
-                api_hash_val,
-                connection_retries=1
-            )
-            
-            is_valid = False
+        phone = args_list[0].strip()
+        api_id_val = args_list[1].strip()
+        api_hash_val = args_list[2].strip()
+        session_str = args_list[3].strip()
+
+        # Parse custom price parameter safely if provided
+        set_custom_price = None
+        if len(args_list) >= 5:
             try:
-                await temp_client.connect()
-                is_valid = await temp_client.is_user_authorized()
-            except Exception as auth_error:
-                logging.warning(f"Session string check failed: {auth_error}")
-                is_valid = False
-            finally:
-                await temp_client.disconnect()
+                set_custom_price = float(args_list[4].strip())
+            except ValueError:
+                pass
+
+        progress_msg = await event.respond("⏳ **Verifying login credentials against Telegram servers...**")
+
+        # Create temporary verification client
+        temp_client = TelegramClient(
+            StringSession(session_str),
+            int(api_id_val),
+            api_hash_val,
+            connection_retries=1
+        )
+        
+        is_valid = False
+        try:
+            await temp_client.connect()
+            is_valid = await temp_client.is_user_authorized()
+        except Exception as auth_error:
+            logging.warning(f"Session string check failed: {auth_error}")
+            is_valid = False
+        finally:
+            await temp_client.disconnect()
+
+        if not is_valid:
+            await progress_msg.edit("❌ **Stock Rejected!** The session string or API credentials are invalid.")
+            event.handled = True
+            return
+
+        # Derive country mapping targets based on phone prefixes
+        prefix_to_country = {
+            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh",
+            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran",
+            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya",
+            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
+        }
+        
+        clean_phone = phone if phone.startswith("+") else "+" + phone
+        detected_country = "Other International"
+        for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+            if clean_phone.startswith(prefix):
+                detected_country = prefix_to_country[prefix]
+                break
+
+        # Save sanitized configurations cleanly into PostgreSQL database storage layers
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    """INSERT INTO available_accounts (phone_number, api_id, api_hash, string_session)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (phone_number) DO UPDATE SET
+                    api_id = EXCLUDED.api_id, 
+                    api_hash = EXCLUDED.api_hash, 
+                    string_session = EXCLUDED.string_session""",
+                    (phone, api_id_val, api_hash_val, session_str)
+                )
                 
-            if not is_valid:
-                await progress_msg.edit("❌ **Stock Rejected!** The session string or API credentials provided are invalid or expired.")
-                event.handled = True
-                return
-                
-            # 2. Derive structural country mappings to set price targets correctly
-            prefix_to_country = {
-                "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
-                "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
-                "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
-                "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
-            }
-            
-            clean_phone = phone
-            if not clean_phone.startswith("+"):
-                clean_phone = "+" + clean_phone
-                
-            detected_country = "Other International"
-            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-                if clean_phone.startswith(prefix):
-                    detected_country = prefix_to_country[prefix]
-                    break
-            
-            # 3. Commit verification loops safely to your storage engine
-            async with await get_db_connection() as conn:
-                async with conn.cursor() as cursor:
-                    # Save stock credentials record
+                price_note = ""
+                if set_custom_price is not None:
                     await cursor.execute(
-                        """INSERT INTO available_accounts (phone_number, api_id, api_hash, string_session) 
-                           VALUES (%s, %s, %s, %s) 
-                           ON CONFLICT (phone_number) DO UPDATE SET 
-                           api_id = EXCLUDED.api_id, api_hash = EXCLUDED.api_hash, string_session = EXCLUDED.string_session""",
-                        (phone, api_id_val, api_hash_val, session_str)
+                        """INSERT INTO country_prices (country, price) VALUES (%s, %s)
+                        ON CONFLICT (country) DO UPDATE SET price = EXCLUDED.price""",
+                        (detected_country, set_custom_price)
                     )
-                    
-                    # Update dynamic pricing if custom value is provided
-                    price_note = ""
-                    if set_custom_price is not None:
-                        await cursor.execute(
-                            """INSERT INTO country_prices (country, price) VALUES (%s, %s) 
-                               ON CONFLICT (country) DO UPDATE SET price = EXCLUDED.price""",
-                            (detected_country, set_custom_price)
-                        )
-                        price_note = f"\n💰 **Price Auto-Configured:** ₹{set_custom_price:.2f} for {detected_country}"
-                        
-                    await conn.commit()
-            
-            await progress_msg.edit(f"✅ **Stock Verified & Active!**\n\n📞 Phone: `{phone}`\n🌍 Target Group: **{detected_country}**{price_note}")
-        except Exception as e:
-            await event.respond(
-                f"❌ **Format Error!** Use one of these patterns:\n\n"
-                f"🔹 **With New Price:**\n`/addstock phone,api_id,api_hash,session,price`\n\n"
-                f"🔹 **Keep Current Price:**\n`/addstock phone,api_id,api_hash,session`"
-            )
-        event.handled = True
-        return
+                    price_note = f"\n💰 **Price Auto-Configured:** ₹{set_custom_price:.2f} for {detected_country}"
+                
+                await conn.commit()
+
+        await progress_msg.edit(f"✅ **Stock Verified & Active!**\n\n📞 Phone: `{phone}`\n🌍 Target Group: **{detected_country}**{price_note}")
+
+    except Exception as e:
+        logging.error(f"Syntax parsing failure inside Addstock module: {e}")
+        await event.respond(
+            "❌ **Format Error!** Use one of these patterns:\n\n"
+            "🔹 **With New Price:**\n`/addstock phone,api_id,api_hash,session,price`\n\n"
+            "🔹 **Keep Current Price:**\n`/addstock phone,api_id,api_hash,session`"
+        )
+    
+    event.handled = True
+    return
 
     # Admin Quick Price Modifier Command
     if (text.startswith("/updateprice") or text.startswith("/updatestock")) and uid == ADMIN_TELEGRAM_ID:
@@ -830,7 +833,7 @@ async def callback_handler(event):
                     await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, str(uid)))
                     await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
 
-                    bundled_meta = f"{api_id_to_buy}|{api_hash_to_buy}|{session_to_buy}"
+                    bundled_meta = f"{session_to_buy.strip()}|{str(api_id_to_buy).strip()}|{api_hash_to_buy.strip()}"
                     await cursor.execute(
                         "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
                         (phone_to_buy, str(uid), bundled_meta)

@@ -327,6 +327,7 @@ async def global_message_handler(event):
         event.handled = True
         return
 
+    
     # 1. Handle /start Command
     if text.startswith("/start"):
         async with await get_db_connection() as conn:
@@ -634,47 +635,6 @@ async def admin_add_click(event):
                 await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
                 event.handled = True
                 return
-
-# --- Admin Callback Button Processors ---
-@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"add:")))
-async def admin_add_click(event):
-    if event.sender_id != ADMIN_TELEGRAM_ID:
-        return
-        
-    await event.answer()
-    
-    data_str = event.data.decode('utf-8')
-    _, claim_id, add_amt = data_str.split(":")
-    add_amt = int(add_amt)
-    
-    async with await get_db_connection() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = %s", (int(claim_id),))
-            row = await cursor.fetchone()
-            
-            if not row:
-                await event.edit("❌ This claim has expired or was already closed.")
-                return
-                
-            uid = row[0]
-            txn = row[1]
-            session_amt = row[2]
-            new_session_amt = session_amt + add_amt
-            
-            await cursor.execute("UPDATE claims SET session_amt = %s WHERE claim_id = %s", (new_session_amt, int(claim_id)))
-            await cursor.execute("UPDATE users SET balance = balance + %s WHERE uid = %s", (add_amt, uid))
-            await conn.commit()
-            
-            akb = [
-                [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
-                [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
-                [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
-                [Button.inline(f"✅ Success Payment (Rs.{new_session_amt})", data=f"send:{claim_id}")],
-                [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
-            ]
-            
-            updated_text = f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{new_session_amt}"
-            await event.edit(updated_text, buttons=akb, parse_mode='html')
 
 # --- Admin Callback Button Processors ---
 @bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"add:")))
@@ -1112,9 +1072,25 @@ async def send_telegram_services_menu(event):
 # --- Execution Runtime Initialization Loop ---
 async def main():
     await init_db()
-    await bot.start(bot_token=BOT_TOKEN)
-    logging.info("SKY OTP Master Bot Infrastructure is Online.")
-    await bot.run_until_disconnected()
+    try:
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("""
+                    DO $$ 
+                    BEGIN 
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                       WHERE table_name='claims' AND column_name='status') THEN
+                            ALTER TABLE claims ADD COLUMN status TEXT DEFAULT 'PENDING';
+                        END IF;
+                    END $$;
+                """)
+                await conn.commit()
+    except Exception as db_err:
+        print(f"Migration note: {db_err}")
+
+        await bot.start(bot_token=BOT_TOKEN)
+        logging.info("SKY OTP Master Bot Infrastructure is Online.")
+        await bot.run_until_disconnected()
 
 if __name__ == "__main__":
     import asyncio

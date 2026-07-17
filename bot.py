@@ -649,103 +649,106 @@ async def callback_handler(event):
         try:
             await event.answer("Validating warehouse stock pipeline...", alert=False)
             target_slug = data.replace("buy_tg_", "").strip()
-            
+
             # Fetch live database prices dynamically instead of hardcoding
             custom_prices = await get_country_prices()
             DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
-            
+
             country_flags = {
                 "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
                 "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
             }
-            
+
             prefix_to_country = {
-                "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
-                "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
-                "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
-                "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
+                "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh",
+                "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran",
+                "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya",
+                "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", 
+                "+977": "Nepal", "+95": "Myanmar"
             }
 
             canada_area_codes = [
-                "204", "226", "236", "249", "250", "289", "306", "343", "365", "403", "416", "418", 
-                "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "600", 
-                "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819", 
-                "825", "867", "873", "902", "905"
+                "204", "226", "236", "249", "250", "431", "437", "438", "450", "506", "514", 
+                "519", "548", "579", "581", "587", "604", "613", "639", "647", "705", "709", 
+                "742", "778", "780", "782", "825", "867", "873", "902", "905"
             ]
 
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
                     await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts")
                     all_stock = await cursor.fetchall()
-                    
-                    selected_account = None
-                    detected_country_name = "Other International"
-                    
-                    for phone, api_id, api_hash, session_str in all_stock:
-                        clean_phone = phone.strip()
-                        if not clean_phone.startswith("+"):
-                            clean_phone = "+" + clean_phone
-                        
-                        if clean_phone.startswith("+1") and len(clean_phone) >= 5:
-                            area_code = clean_phone[2:5]
-                            account_country = "Canada" if area_code in canada_area_codes else "United States"
-                        else:
-                            account_country = "Other International"
-                            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-                                if clean_phone.startswith(prefix):
-                                    account_country = prefix_to_country[prefix]
-                                    break
-                        
-                        # Match slug strings correctly matching the storefront payload mutations
-                        current_slug = account_country.lower().replace(" ", "_")[:20]
-                        if current_slug == target_slug:
-                            selected_account = (phone, api_id, api_hash, session_str)
-                            detected_country_name = account_country
-                            break
-                    
-                    if not selected_account:
-                        await event.respond("⚠️ **Out of Stock!** No available numbers match your requested country target group.")
-                        return
-                    
-                    phone_to_buy, api_id_to_buy, api_hash_to_buy, session_to_buy = selected_account
-                    
-                    # Check balance check loops to make sure users can buy accounts cleanly
-                    display_price = custom_prices.get(detected_country_name, DEFAULT_PRICE)
-                    await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
-                    bal_row = await cursor.fetchone()
-                    user_bal = bal_row[0] if bal_row else 0
-                    
-                    if user_bal < display_price:
-                        await event.respond(f"❌ **Insufficient Funds!**\n\nThis account costs **₹{display_price:.2f}**, but your wallet only holds **₹{user_bal:.2f}**.\n\nPlease top up your funds first.")
-                        return
-                    
-                    # Deduct balance and update tables cleanly
-                    await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
-                    await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
-                    
-                    # Packaging connection components safely into the data rows string variable parameter
-                    bundled_meta = f"{api_id_to_buy}|{api_hash_to_buy}|{session_to_buy}"
-                    await cursor.execute(
-                        "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
-                        (phone_to_buy, uid, bundled_meta)
-                    )
-                    await conn.commit()
 
-            display_flag = country_flags.get(detected_country_name, "🌐")
-            success_msg = (
-                f"✅ **Number reserved successfully**\n\n"
-                f"📞 **Phone:** `{phone_to_buy}`\n"
-                f"🌍 **Country:** {detected_country_name} {display_flag}\n"
-                f"💰 **Price:** ₹{display_price:.2f}\n\n"
-                f"🌟 **Note:** Your account reservation is active. Use the button below to check your dynamic inbox updates!"
-            )
+            selected_account = None
             
-            await event.respond(success_msg, buttons=[[Button.inline("✉️ Check OTP", data=f"checkotp:{phone_to_buy}")]])
+            # 🔥 Properly unpack the four items from each database row
+            for phone, api_id, api_hash, session_str in all_stock:
+                if not phone: 
+                    continue
+                clean_phone = phone.strip()
+                if not clean_phone.startswith("+"): 
+                    clean_phone = "+" + clean_phone
+                
+                detected_country_name = "Other International"
+                if clean_phone.startswith("+1") and len(clean_phone) >= 5:
+                    detected_country_name = "Canada" if clean_phone[2:5] in canada_area_codes else "United States"
+                else:
+                    for prefix, country in prefix_to_country.items():
+                        if clean_phone.startswith(prefix):
+                            detected_country_name = country
+                            break
+                
+                # Convert the country name to a 15-character lowercase slug matching the inline buttons
+                current_slug = detected_country_name.lower().replace(' ', '_')[:15]
+                
+                # Check for an exact match against what the user clicked
+                if current_slug == target_slug:
+                    selected_account = (phone, api_id, api_hash, session_str, detected_country_name)
+                    break
+         
+            if not selected_account:
+                await event.respond("⚠️ **Out of Stock!** No available numbers match your requested country.")
+                return
+
+            # ✅ FIX: Properly unpack all 5 elements from the selected_account tuple
+            phone_to_buy, api_id_to_buy, api_hash_to_buy, session_to_buy, detected_country_name = selected_account
+
+            # Check balance check loops to make sure users can buy accounts cleanly
+            display_price = custom_prices.get(detected_country_name, DEFAULT_PRICE)
+            await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
+            bal_row = await cursor.fetchone()
+            user_bal = bal_row[0] if bal_row else 0
+
+            if user_bal < display_price:
+                await event.respond(f"❌ **Insufficient Funds!**\n\nThis account costs **₹{display_price:.2f}**, but your current balance is **₹{user_bal:.2f}**.")
+                return
+
+            # Deduct balance and update tables clearly
+            await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
+            await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
+
+            # Packaging connection components safely into the data rows string variable parameter
+            bundled_meta = f"{api_id_to_buy}|{api_hash_to_buy}|{session_to_buy}"
+            await cursor.execute(
+                "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
+                (phone_to_buy, uid, bundled_meta)
+            )
+            await conn.commit()
+
+            display_flag = country_flags.get(detected_country_name, "🇺🇳")
+            success_msg = (
+                f"🌐 **Number reserved successfully**\n\n"
+                f"📱 **Phone:** `{phone_to_buy}`\n"
+                f"🌍 **Country:** {detected_country_name} {display_flag}\n"
+                f"💵 **Price:** ₹{display_price:.2f}\n\n"
+                f"**Note:** Your account reservation is active. Use the button below to check your dynamic inbox."
+            )
+
+            await event.respond(success_msg, buttons=[[Button.inline("📩 Check OTP", data=f"checkotp:{phone_to_buy}")]])
+
         except Exception as e:
             logging.error(f"Error during storefront purchase handler: {e}")
             await event.respond("❌ An error occurred while processing your selection request.")
-        return
-
+            return
 
         # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):

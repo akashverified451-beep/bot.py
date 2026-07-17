@@ -435,9 +435,12 @@ async def global_message_handler(event):
 
             await event.respond("📊 **Available Telegram Services**", buttons=tg_services_kb)
             event.handled = True
-            raise events.StopPropagation
+            return
 
         except Exception as e:
+            if "StopPropagation" in str(type(e)):
+                return
+                
             logging.error(f"Critical crash inside shop selector logic loop: {e}")
             await event.respond("❌ An error occurred while generating the store list.")
             event.handled = True
@@ -469,7 +472,7 @@ async def global_message_handler(event):
     elif text == "🆘 Support" or "Support" in text:
         try:
             support_msg = (
-                "❌ <b>To contact our official support:</b>\n\n"
+                "✅️ <b>To contact our official support:</b>\n\n"
                 "💬 <b>Telegram ID:</b> @Sky_Verified\n"
                 "⏰ <b>Working Hours:</b> 10:00 AM to 10:00 PM"
             )

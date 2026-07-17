@@ -750,28 +750,33 @@ async def callback_handler(event):
         # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):
         try:
-            _, target_phone = data.split(":")
-            target_phone = target_phone.strip()
-            
-            await event.answer("🔄 Scanning account inbox instantly...", alert=False)
-            
-            api_id_val = None
-            api_hash_val = None
-            session_str_val = None
-            
-            async with await get_db_connection() as conn:
-                async with conn.cursor() as cursor:
-                    # Query active_orders table to fetch backup key details securely
-                    await cursor.execute(
-                        "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", 
-                        (target_phone, uid)
-                    )
-                    row = await cursor.fetchone()
-                    if row and row[0]:
-                        try:
-                            api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
-                        except ValueError:
-                            pass
+            _target_phone = data.split(":")
+            if len(_target_phone) < 2:
+                await event.answer("❌ Invalid callback token payload schema.", alert=True)
+                return
+        target_phone = _target_phone[1].strip()
+
+        await event.answer("🔍 Scanning account inbox instantly...", alert=False)
+
+        api_id_val = None
+        api_hash_val = None
+        session_str_val = None
+        fetched_otp = "⏳ NO LIVE SMS FOUND YET"
+
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                # Cast uid to a string to match your PostgreSQL text schema type
+                await cursor.execute(
+                    "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", 
+                    (target_phone, str(uid))
+                )
+                row = await cursor.fetchone()
+                if row and row[0]:
+                    try:
+                        # Split the stored string using the pipe character |
+                        api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
+                    except ValueError:
+                        pass
 
             fetched_otp = "⏳ NO LIVE SMS FOUND YET"
 

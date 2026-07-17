@@ -483,56 +483,101 @@ async def global_message_handler(event):
         except Exception as e:
             logging.error(f"Error in support button: {e}")
             return
-
+            
+    # Handle Add Funds           
     elif "Add Funds" in text or "➕" in text:
-        txn = "".join([str(random.randint(0, 9)) for _ in range(10)])
+        txn = "".join([str(random.randint(0, 9)) for _ in range(15)])
         claim_id = str(random.randint(1000, 9999))
-
+        
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("INSERT INTO claims (claim_id, uid, txn) VALUES (%s, %s, %s)", (claim_id, uid, txn))
                 await conn.commit()
-
-        img = qrcode.make(f"upi://pay?pa={{YOUR_UPI_ID}}&pn=SKY_OTP&cu=INR")
+                
+        img = qrcode.make(f"upi://pay?pa={YOUR_UPI_ID}&pn=SKY_OTP&cu=INR&tr={txn}&tn={txn}")
         buf = io.BytesIO()
         img.save(buf, format='PNG')
         buf.seek(0)
         buf.name = "qr.png"
-
-        # 🟢 UPDATED: Message formatting updated as requested
+        
         cap = "<b>Welcome to the Deposit System</b>\n\nScan the QR code below to proceed."
-
         await event.respond(
             cap,
             file=buf,
             buttons=[[Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]],
             parse_mode='html'
         )
-    
+        event.handled = True
+        return
+
     # Handle Screenshot Uploads
     if event.photo:
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = %s ORDER BY claim_id DESC LIMIT 1", (uid,))
                 row = await cursor.fetchone()
-            
-        if not row:
-            await event.respond("❌ You don't have any active deposit generation requests open. Please click '➕ Add Funds' first.")
-            return
-            
-        claim_id, txn = row[0], row[1]
-        await event.respond("⏳ <b>Screenshot Received!</b>\nYour proof has been sent to the admin for manual verification.", parse_mode='html')
+                
+                if not row:
+                    await event.respond("❌ You don't have any active deposit generation requests open. Please click '➕ Add Funds' first.")
+                    return
+                    
+                claim_id = row[0]
+                txn = row[1]
+                await event.respond("⏳ <b>Screenshot Received!</b>\nYour proof has been sent to the admin for manual verification.", parse_mode='html')
+                
+                akb = [
+                    [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
+                    [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
+                    [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
+                    [Button.inline("✅ Success Payment", data=f"send:{claim_id}")],
+                    [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
+                ]
+                
+                admin_text = f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0"
+                await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
+                event.handled = True
+                return
+
+# --- Admin Callback Button Processors ---
+@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"add:")))
+async def admin_add_click(event):
+    if event.sender_id != ADMIN_TELEGRAM_ID:
+        return
         
-        akb = [
-            [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
-            [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
-            [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
-            [Button.inline("📩 Confirm & Send", data=f"send:{claim_id}")],
-            [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
-        ]
-        
-        admin_text = f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0"
-        await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
+    await event.answer()
+    
+    data_str = event.data.decode('utf-8')
+    _, claim_id, add_amt = data_str.split(":")
+    add_amt = int(add_amt)
+    
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = %s", (int(claim_id),))
+            row = await cursor.fetchone()
+            
+            if not row:
+                await event.edit("❌ This claim has expired or was already closed.")
+                return
+                
+            uid = row[0]
+            txn = row[1]
+            session_amt = row[2]
+            new_session_amt = session_amt + add_amt
+            
+            await cursor.execute("UPDATE claims SET session_amt = %s WHERE claim_id = %s", (new_session_amt, int(claim_id)))
+            await cursor.execute("UPDATE users SET balance = balance + %s WHERE uid = %s", (add_amt, uid))
+            await conn.commit()
+            
+            akb = [
+                [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
+                [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
+                [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
+                [Button.inline(f"✅ Success Payment (Rs.{new_session_amt})", data=f"send:{claim_id}")],
+                [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
+            ]
+            
+            updated_text = f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{new_session_amt}"
+            await event.edit(updated_text, buttons=akb, parse_mode='html')
 
 # --- Admin Callback Button Processors ---
 @bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"add:")))

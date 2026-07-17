@@ -757,79 +757,83 @@ async def callback_handler(event):
             await event.respond("❌ An error occurred while processing your selection request.")
             return
 
-        # 2. Second Step: Extract stored data logs and execute instant validation hook
+    # # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):
         try:
+            # Extract the phone string from the split list index securely
             _target_phone = data.split(":")
             if len(_target_phone) < 2:
                 await event.answer("❌ Invalid callback token payload schema.", alert=True)
                 return
-        target_phone = _target_phone[1].strip()
+            target_phone = _target_phone[1].strip()
 
-        await event.answer("🔍 Scanning account inbox instantly...", alert=False)
+            await event.answer("🔍 Scanning account inbox instantly...", alert=False)
 
-        api_id_val = None
-        api_hash_val = None
-        session_str_val = None
-        fetched_otp = "⏳ NO LIVE SMS FOUND YET"
-
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                # Cast uid to a string to match your PostgreSQL text schema type
-                await cursor.execute(
-                    "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", 
-                    (target_phone, str(uid))
-                )
-                row = await cursor.fetchone()
-                if row and row[0]:
-                    try:
-                        # Split the stored string using the pipe character |
-                        api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
-                    except ValueError:
-                        pass
-
+            api_id_val = None
+            api_hash_val = None
+            session_str_val = None
             fetched_otp = "⏳ NO LIVE SMS FOUND YET"
+
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    # Cast uid to a string to match your PostgreSQL text schema type
+                    await cursor.execute(
+                        "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", 
+                        (target_phone, str(uid))
+                    )
+                    row = await cursor.fetchone()
+                    if row and row[0]:
+                        try:
+                            # Split the stored string using the pipe character |
+                            api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
+                        except ValueError:
+                            pass
 
             if session_str_val:
                 temp_client = None
                 try:
                     from telethon.sessions import StringSession
-                    
+                    import re
+                    import asyncio
+
                     temp_client = TelegramClient(
-                        StringSession(session_str_val.strip()), 
-                        int(api_id_val.strip()), 
+                        StringSession(session_str_val.strip()),
+                        int(api_id_val.strip()),
                         api_hash_val.strip(),
                         connection_retries=1,
                         retry_delay=1
                     )
-                    
+
                     # Fast connection timeout constraint
                     await asyncio.wait_for(temp_client.connect(), timeout=4.0)
-                    
+
                     if await temp_client.is_user_authorized():
-                        # Scan exclusively the official Telegram notifications user profile
+                        # Scan exclusively the official Telegram notifications profile
                         async for msg in temp_client.iter_messages(777000, limit=1):
-                            if msg.text:
+                            if msg and msg.text:
                                 otp_match = re.search(r'\b\d{5,6}\b', msg.text)
                                 if otp_match:
-                                    fetched_otp = otp_match.group(0)
+                                    fetched_otp = f"🔑 **Your OTP Code is:** `{otp_match.group(0)}`"
                                 else:
-                                    # Clean and format plain text snippets safely
-                                    fetched_otp = msg.text[:40].replace('\n', ' ').strip()
+                                    fetched_otp = f"📩 **Latest Message:**\n`{msg.text[:40].replace('\n', ' ')}`.strip()"
                     else:
-                        fetched_otp = "❌ SESSION EXPIRED / TERMINATED"
-                        
+                        fetched_otp = "❌ **SESSION EXPIRED / TERMINATED**"
+
                 except Exception as e:
                     logging.error(f"Instant Live Check Fault: {e}")
                     fetched_otp = "⏳ NO LIVE SMS FOUND YET"
-                    
                 finally:
                     if temp_client is not None:
                         try:
-                            if temp_client.is_connected():
+                            if await temp_client.is_connected():
                                 await temp_client.disconnect()
                         except Exception:
                             pass
+
+        except Exception as e:
+            logging.error(f"Fatal crash inside checkotp processor loop: {e}")
+            await event.answer("❌ System error running the inbox reader.", alert=True)
+            return
 
             # 1. Dynamically read global price entries and country matching settings
             custom_prices = await get_country_prices()

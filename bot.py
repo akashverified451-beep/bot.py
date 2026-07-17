@@ -501,14 +501,111 @@ async def global_message_handler(event):
         buf.name = "qr.png"
         
         cap = "<b>Welcome to the Deposit System</b>\n\nScan the QR code below to proceed."
-        await event.respond(
-            cap,
-            file=buf,
-            buttons=[[Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]],
-            parse_mode='html'
-        )
+        
+        # Show both Success Payment and Cancel buttons directly to the user under the QR
+        ukb = [
+            [Button.inline("✅ Success Payment", data=f"userpaid:{claim_id}")],
+            [Button.inline("❌ Cancel Request", data=f"cancel:{claim_id}")]
+        ]
+        await event.respond(cap, file=buf, buttons=ukb, parse_mode='html')
         event.handled = True
         return
+
+# --- User & Admin Callback Button Processors ---
+
+# Step 2: When user clicks "Success Payment", ask them for the screenshot
+@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"userpaid:")))
+async def user_click_success(event):
+    data_str = event.data.decode('utf-8')
+    _, claim_id = data_str.split(":")
+    
+    await event.answer()
+    
+    # Update the database status to know we are waiting for a screenshot from this claim
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("UPDATE claims SET status = 'WAITING_SCREENSHOT' WHERE claim_id = %s", (int(claim_id),))
+            await conn.commit()
+            
+    await event.edit("📩 <b>Please send your payment screenshot now.</b>\nOur system will automatically forward your proof to the admin.", parse_mode='html')
+
+# Step 3: Handle the incoming photo screenshot sent by the user
+@bot.on(events.NewMessage)
+async def handle_incoming_screenshot(event):
+    if not event.photo:
+        return
+        
+    uid = event.sender_id
+    text = event.text or ""
+    
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            # Look for the last claim that is actively waiting for a screenshot
+            await cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = %s AND status = 'WAITING_SCREENSHOT' ORDER BY claim_id DESC LIMIT 1", (uid,))
+            row = await cursor.fetchone()
+            
+            if not row:
+                # If they just random sent a photo without clicking the button first
+                return 
+                
+            claim_id, txn = row[0], row[1]
+            
+            # Reset status so they can't spam images into the same claim
+            await cursor.execute("UPDATE claims SET status = 'UNDER_REVIEW' WHERE claim_id = %s", (int(claim_id),))
+            await conn.commit()
+            
+            await event.respond("⏳ <b>Screenshot Received!</b>\nYour proof has been submitted to the admin for manual verification.", parse_mode='html')
+            
+            # Admin management layout keys
+            akb = [
+                [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
+                [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
+                [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
+                [Button.inline("📩 Confirm & Send", data=f"send:{claim_id}")],
+                [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
+            ]
+            
+            admin_text = f"🚨 <b>New Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹0"
+            await bot.send_message(entity=ADMIN_TELEGRAM_ID, message=admin_text, file=event.photo, buttons=akb, parse_mode='html')
+            event.handled = True
+
+# Step 4: Admin increases the amount counters on their screen
+@bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"add:")))
+async def admin_add_click(event):
+    if event.sender_id != ADMIN_TELEGRAM_ID:
+        return
+        
+    await event.answer()
+    data_str = event.data.decode('utf-8')
+    _, claim_id, add_amt = data_str.split(":")
+    add_amt = int(add_amt)
+    
+    async with await get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT uid, txn, session_amt FROM claims WHERE claim_id = %s", (int(claim_id),))
+            row = await cursor.fetchone()
+            
+            if not row:
+                await event.edit("❌ This claim has expired or was already closed.")
+                return
+                
+            uid, txn, session_amt = row[0], row[1], row[2]
+            new_session_amt = session_amt + add_amt
+            
+            await cursor.execute("UPDATE claims SET session_amt = %s WHERE claim_id = %s", (new_session_amt, int(claim_id)))
+            await cursor.execute("UPDATE users SET balance = balance + %s WHERE uid = %s", (add_amt, uid))
+            await conn.commit()
+            
+            akb = [
+                [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
+                [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],
+                [Button.inline("➕ ₹100", data=f"add:{claim_id}:100"), Button.inline("➕ ₹500", data=f"add:{claim_id}:500")],
+                [Button.inline("📩 Confirm & Send", data=f"send:{claim_id}")],
+                [Button.inline("❌ Decline Request", data=f"deny:{claim_id}")]
+            ]
+            
+            updated_text = f"🚨 <b>Adjusting Deposit Claim!</b>\n👤 <b>User:</b> <code>{uid}</code>\n📌 <b>TXN Ref:</b> <code>{txn}</code>\n\n💰 <b>Session Added So Far:</b> ₹{new_session_amt}"
+            await event.edit(updated_text, buttons=akb, parse_mode='html')
 
     # Handle Screenshot Uploads
     if event.photo:

@@ -1088,9 +1088,9 @@ async def main():
     except Exception as db_err:
         print(f"Migration note: {db_err}")
 
-        await bot.start(bot_token=BOT_TOKEN)
-        logging.info("SKY OTP Master Bot Infrastructure is Online.")
-        await bot.run_until_disconnected()
+    await bot.start(BOT_TOKEN)
+    logging.info("SKY OTP Master Bot Infrastructure is Online.")
+    await bot.run_until_disconnected()
 
 if __name__ == "__main__":
     import asyncio

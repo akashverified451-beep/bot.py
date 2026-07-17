@@ -5,4 +5,3 @@ tgcrypto
 qrcode
 pillow
 psycopg[binary]
-easyocr

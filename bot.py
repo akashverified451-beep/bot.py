@@ -512,8 +512,6 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-# --- User & Admin Callback Button Processors ---
-
 # Step 2: When user clicks "Success Payment", ask them for the screenshot
 @bot.on(events.CallbackQuery(data=lambda d: d.startswith(b"userpaid:")))
 async def user_click_success(event):
@@ -522,10 +520,10 @@ async def user_click_success(event):
     
     await event.answer()
     
-    # Update the database status to know we are waiting for a screenshot from this claim
     async with await get_db_connection() as conn:
         async with conn.cursor() as cursor:
-            await cursor.execute("UPDATE claims SET status = 'WAITING_SCREENSHOT' WHERE claim_id = %s", (int(claim_id),))
+            # FIX: Removed int() so text-based claim IDs don't crash PostgreSQL
+            await cursor.execute("UPDATE claims SET status = 'WAITING_SCREENSHOT' WHERE claim_id = %s", (claim_id,))
             await conn.commit()
             
     await event.edit("📩 <b>Please send your payment screenshot now.</b>\nOur system will automatically forward your proof to the admin.", parse_mode='html')
@@ -537,27 +535,23 @@ async def handle_incoming_screenshot(event):
         return
         
     uid = event.sender_id
-    text = event.text or ""
     
     async with await get_db_connection() as conn:
         async with conn.cursor() as cursor:
-            # Look for the last claim that is actively waiting for a screenshot
             await cursor.execute("SELECT claim_id, txn FROM claims WHERE uid = %s AND status = 'WAITING_SCREENSHOT' ORDER BY claim_id DESC LIMIT 1", (uid,))
             row = await cursor.fetchone()
             
             if not row:
-                # If they just random sent a photo without clicking the button first
                 return 
                 
             claim_id, txn = row[0], row[1]
             
-            # Reset status so they can't spam images into the same claim
-            await cursor.execute("UPDATE claims SET status = 'UNDER_REVIEW' WHERE claim_id = %s", (int(claim_id),))
+            # FIX: Removed int() to keep data types matched up perfectly
+            await cursor.execute("UPDATE claims SET status = 'UNDER_REVIEW' WHERE claim_id = %s", (claim_id,))
             await conn.commit()
             
             await event.respond("⏳ <b>Screenshot Received!</b>\nYour proof has been submitted to the admin for manual verification.", parse_mode='html')
             
-            # Admin management layout keys
             akb = [
                 [Button.inline("➕ ₹1", data=f"add:{claim_id}:1"), Button.inline("➕ ₹5", data=f"add:{claim_id}:5")],
                 [Button.inline("➕ ₹10", data=f"add:{claim_id}:10"), Button.inline("➕ ₹50", data=f"add:{claim_id}:50")],

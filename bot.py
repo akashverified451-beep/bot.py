@@ -125,7 +125,7 @@ async def global_message_handler(event):
         # ==========================================
         # CLEAN REPAIRED /addstock COMMAND HANDLER
         # ==========================================
-        if text.startswith("/addstock") and uid == ADMIN_TELEGRAM_ID:
+        if text.startswith("/addstock") and uid == 8393210427:
             try:
                 raw_args = text.replace("/addstock", "").strip()
                 

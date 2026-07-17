@@ -369,7 +369,7 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-    # # 5. Handle Buy Telegram Account Button
+    # 5. Handle Buy Telegram Account Button
     elif "Buy Telegram Account" in text or "🛍" in text:
         try:
             # Fetch dynamic live database prices safely inside the block
@@ -422,7 +422,9 @@ async def global_message_handler(event):
             for country_name, stock_qty in inventory.items():
                 flag = country_flags.get(country_name, "🇺🇳")
                 price = custom_prices.get(country_name, DEFAULT_PRICE)
-                callback_payload = f"buy_tg_{country_name.lower().replace(' ', '_')[:20]}"
+                
+                # Truncate callback payloads heavily to avoid exceeding Telegram limits
+                callback_payload = f"buy_tg_{country_name.lower().replace(' ', '_')[:15]}"
                 
                 country_row = [
                     Button.inline(f"{flag} {country_name}", data=callback_payload),
@@ -430,12 +432,6 @@ async def global_message_handler(event):
                     Button.inline(f"[{stock_qty}] ✅", data=callback_payload)
                 ]
                 tg_services_kb.append(country_row)
-                
-            # Navigation Control Buttons (Matched with your original design)
-            tg_services_kb.append([
-                Button.inline("🔙 Back To Menu", data="main_menu"),
-                Button.inline("🔄 Refresh Stock", data="refresh_tg_shop")
-            ])
 
             await event.respond("📊 **Available Telegram Services**", buttons=tg_services_kb)
             event.handled = True

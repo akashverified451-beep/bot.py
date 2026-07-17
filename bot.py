@@ -450,26 +450,36 @@ async def global_message_handler(event):
         return
 
     # # 7. Handle Promocode Button
-    if text == "🎟 Promocode":
-        promo_msg = (
-            "<b>Follow me on Instagram to get promo codes</b>\n"
-            "⬇️ <b>Instagram Profile:</b>\n"
-            "<a href='https://instagram.com'>Click Here</a>"
-        )
-        await event.respond(promo_msg, parse_mode='html')
-        event.handled = True
-        return
+    elif text == "🎟️ Promocode" or "Promocode" in text:
+        try:
+            promo_msg = (
+                "<b>✨ Follow me on Instagram to get promo codes:</b>\n\n"
+                "ℹ️ <b>Instagram Profile:</b>\n"
+                "<a href='https://instagram.com'>👉 Click Here to Visit</a>"
+            )
+            # Use capitalized 'html' for correct Telethon parsing
+            await event.respond(promo_msg, parse_mode='html')
+            event.handled = True
+            return
+        except Exception as e:
+            logging.error(f"Error in promocode button: {e}")
+            return
 
     # # 8. Handle Support Button with Professional Care
-    if text == "🆘 Support":
-        support_msg = (
-            "❌ <b>To contact our official support:</b>\n"
-            "🗣 <b>Telegram ID:</b> @Sky_Verified\n"
-            "⏰ <b>Working Hours:</b> 10:00 AM to ..."
-        )
-        await event.respond(support_msg, parse_mode='html')
-        event.handled = True
-        return
+    elif text == "🆘 Support" or "Support" in text:
+        try:
+            support_msg = (
+                "❌ <b>To contact our official support:</b>\n\n"
+                "💬 <b>Telegram ID:</b> @Sky_Verified\n"
+                "⏰ <b>Working Hours:</b> 10:00 AM to 10:00 PM"
+            )
+            # Use capitalized 'html' for correct Telethon parsing
+            await event.respond(support_msg, parse_mode='html')
+            event.handled = True
+            return
+        except Exception as e:
+            logging.error(f"Error in support button: {e}")
+            return
 
     elif "Add Funds" in text or "➕" in text:
         txn = "".join([str(random.randint(0, 9)) for _ in range(10)])

@@ -840,7 +840,7 @@ async def callback_handler(event):
             # Delivery message triggers outside the connection loop after successful commit
             display_flag = country_flags.get(detected_country_name, "🌍")
             success_msg = (
-                f"🌐 **Number reserved successfully**\n\n"
+                f"🌍 **Number reserved successfully**\n\n"
                 f"📱 **Phone:** `{phone_to_buy}`\n"
                 f"🌍 **Country:** {detected_country_name} {display_flag}\n"
                 f"💵 **Price:** ₹{display_price:.2f}\n\n"
@@ -864,121 +864,84 @@ async def callback_handler(event):
                 return
             target_phone = _target_phone[1].strip()
 
-            await event.answer("🔍 Scanning account inbox instantly...", alert=False)
+            await event.answer("📡 Connecting to account session mailbox...", alert=False)
+            progress_msg = await event.respond("🔍 <i>Scanning internal Telegram (777000) notification logs...</i>", parse_mode='html')
 
             api_id_val = None
             api_hash_val = None
             session_str_val = None
-            fetched_otp = "⏳ NO LIVE SMS FOUND YET"
 
+            # Pull the credentials from your active database pool
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
-                    # Cast uid to a string to match your PostgreSQL text schema type
+                    # Querying the active_orders table to fetch the dynamic session strings
                     await cursor.execute(
-                        "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", 
-                        (target_phone, str(uid))
+                        "SELECT status FROM active_orders WHERE phone_number = %s", 
+                        (target_phone,)
                     )
                     row = await cursor.fetchone()
+                    
                     if row and row[0]:
                         try:
                             # Split the stored string using the pipe character |
-                            api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
+                            # Schema template assumes: session_string|api_id|api_hash
+                            session_str_val, api_id_val, api_hash_val = row[0].split("|", 2)
                         except ValueError:
                             pass
 
-            if session_str_val:
-                temp_client = None
-                try:
-                    from telethon.sessions import StringSession
-                    import re
-                    import asyncio
+            if not session_str_val or not api_id_val or not api_hash_val:
+                await progress_msg.edit("❌ <b>Session Missing:</b> Account keys or session tokens could not be found or parsed.")
+                return
 
-                    temp_client = TelegramClient(
-                        StringSession(session_str_val.strip()),
-                        int(api_id_val.strip()),
-                        api_hash_val.strip(),
-                        connection_retries=1,
-                        retry_delay=1
+            try:
+                from telethon.sessions import StringSession
+                import re
+
+                # Start temporary backend client connection 
+                temp_client = TelegramClient(StringSession(session_str_val.strip()), int(api_id_val.strip()), api_hash_val.strip())
+                await temp_client.connect()
+
+                if not await temp_client.is_user_authorized():
+                    await progress_msg.edit("❌ <b>Session Revoked:</b> The logged session token string has expired or was closed.")
+                    await temp_client.disconnect()
+                    return
+
+                fetched_otp = None
+                # Scan the official service notifications channel (777000) inside the user application mailbox
+                async for msg in temp_client.iter_messages(777000, limit=5):
+                    body_text = msg.text or ""
+                    
+                    # Target pure 5-digit number patterns
+                    digit_match = re.search(r'\b\d{5}\b', body_text)
+                    if digit_match:
+                        fetched_otp = digit_match.group(0)
+                        break
+
+                await temp_client.disconnect()
+
+                if fetched_otp:
+                    success_text = (
+                        f"🔑 <b>Your Telegram Login Code:</b>\n"
+                        f"<code>{fetched_otp}</code>\n\n"
+                        f"⚡ <i>Enter this 5-digit number into your active application client right now to sign in!</i>"
+                    )
+                    await progress_msg.edit(success_text, parse_mode='html')
+                else:
+                    await progress_msg.edit(
+                        "⏳ <b>No Code Detected Yet!</b>\n\n"
+                        "1. Make sure you typed the number correctly inside your client application.\n"
+                        "2. If it asks you, make sure to click <b>'Send code as SMS'</b> inside your log screen to trigger the cloud push.\n\n"
+                        "<i>Please wait 15 seconds and tap the button to check again.</i>",
+                        parse_mode='html'
                     )
 
-                    # Fast connection timeout constraint
-                    await asyncio.wait_for(temp_client.connect(), timeout=4.0)
-
-                    if await temp_client.is_user_authorized():
-                        # Scan exclusively the official Telegram notifications profile
-                        async for msg in temp_client.iter_messages(777000, limit=1):
-                            if msg and msg.text:
-                                otp_match = re.search(r'\b\d{5,6}\b', msg.text)
-                                if otp_match:
-                                    fetched_otp = f"🔑 **Your OTP Code is:** `{otp_match.group(0)}`"
-                                else:
-                                    fetched_otp = f"📩 **Latest Message:**\n`{msg.text[:40].replace('\n', ' ')}`.strip()"
-                    else:
-                        fetched_otp = "❌ **SESSION EXPIRED / TERMINATED**"
-
-                except Exception as e:
-                    logging.error(f"Instant Live Check Fault: {e}")
-                    fetched_otp = "⏳ NO LIVE SMS FOUND YET"
-                finally:
-                    if temp_client is not None:
-                        try:
-                            if await temp_client.is_connected():
-                                await temp_client.disconnect()
-                        except Exception:
-                            pass
+            except Exception as client_err:
+                await progress_msg.edit(f"❌ <b>Session Error:</b> <code>{str(client_err)}</code>", parse_mode='html')
 
         except Exception as e:
-            logging.error(f"Fatal crash inside checkotp processor loop: {e}")
-            await event.answer("❌ System error running the inbox reader.", alert=True)
+            logging.error(f"Error during storefront verification handler: {e}")
+            await event.respond("❌ An error occurred while processing your selection request.")
             return
-
-            # 1. Dynamically read global price entries and country matching settings
-            custom_prices = await get_country_prices()
-            DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
-            
-            country_flags = {
-                "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
-                "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
-            }
-            
-            prefix_to_country = {
-                "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
-                "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
-                "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
-                "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
-            }
-
-            # 2. Extract country metadata matching the active phone string selection
-            clean_phone_check = target_phone
-            if not clean_phone_check.startswith("+"):
-                clean_phone_check = "+" + clean_phone_check
-
-            detected_country = "Other International"
-            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-                if clean_phone_check.startswith(prefix):
-                    detected_country = prefix_to_country[prefix]
-                    break
-
-            display_flag = country_flags.get(detected_country, "🌐")
-            display_price = custom_prices.get(detected_country, DEFAULT_PRICE)
-
-            # 3. Dynamic layout structures display accurate metrics seamlessly
-            custom_otp_message = (
-                f"{display_flag} **{detected_country}**   ₹{display_price:.1f}   ✅\n\n"
-                f"📞 **Phone Number:** `{target_phone}`\n"
-                f"📩 **OTP:** **`{fetched_otp}`**\n\n"
-                f"⚠️ **Note:** The Re-Request button is active for 24 hours. "
-                f"After that, you'll need to request a new number."
-            )
-            
-            # Use respond or edit safely to update the UI framework screen directly
-            await event.respond(
-                custom_otp_message, 
-                buttons=[[Button.inline("🔄 Re-Request OTP", data=f"checkotp:{target_phone}")]]
-            )
-            
-        except Exception as general_err:
-            logging.error(f"Global error inside checkotp handler: {general_err}")
 
 async def send_telegram_services_menu(event):
     try:

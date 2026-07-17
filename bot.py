@@ -672,68 +672,65 @@ async def callback_handler(event):
                 "519", "548", "579", "581", "587", "604", "613", "639", "647", "705", "709", 
                 "742", "778", "780", "782", "825", "867", "873", "902", "905"
             ]
-
+            
+            # ✅ Open the database connection once for the entire purchase process
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
+                    
+                    # 1. Fetch available stock items
                     await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts")
                     all_stock = await cursor.fetchall()
 
-            selected_account = None
-            
-            # 🔥 Properly unpack the four items from each database row
-            for phone, api_id, api_hash, session_str in all_stock:
-                if not phone: 
-                    continue
-                clean_phone = phone.strip()
-                if not clean_phone.startswith("+"): 
-                    clean_phone = "+" + clean_phone
-                
-                detected_country_name = "Other International"
-                if clean_phone.startswith("+1") and len(clean_phone) >= 5:
-                    detected_country_name = "Canada" if clean_phone[2:5] in canada_area_codes else "United States"
-                else:
-                    for prefix, country in prefix_to_country.items():
-                        if clean_phone.startswith(prefix):
-                            detected_country_name = country
+                    selected_account = None
+                    for phone, api_id, api_hash, session_str in all_stock:
+                        if not phone: 
+                            continue
+                        clean_phone = phone.strip()
+                        if not clean_phone.startswith("+"): 
+                            clean_phone = "+" + clean_phone
+                        
+                        detected_country_name = "Other International"
+                        if clean_phone.startswith("+1") and len(clean_phone) >= 5:
+                            detected_country_name = "Canada" if clean_phone[2:5] in canada_area_codes else "United States"
+                        else:
+                            for prefix, country in prefix_to_country.items():
+                                if clean_phone.startswith(prefix):
+                                    detected_country_name = country
+                                    break
+                        
+                        current_slug = detected_country_name.lower().replace(' ', '_')[:15]
+                        if current_slug == target_slug:
+                            selected_account = (phone, api_id, api_hash, session_str, detected_country_name)
                             break
-                
-                # Convert the country name to a 15-character lowercase slug matching the inline buttons
-                current_slug = detected_country_name.lower().replace(' ', '_')[:15]
-                
-                # Check for an exact match against what the user clicked
-                if current_slug == target_slug:
-                    selected_account = (phone, api_id, api_hash, session_str, detected_country_name)
-                    break
-         
-            if not selected_account:
-                await event.respond("⚠️ **Out of Stock!** No available numbers match your requested country.")
-                return
 
-            # ✅ FIX: Properly unpack all 5 elements from the selected_account tuple
-            phone_to_buy, api_id_to_buy, api_hash_to_buy, session_to_buy, detected_country_name = selected_account
+                    if not selected_account:
+                        await event.respond("⚠️ **Out of Stock!** No available numbers match your requested country.")
+                        return
 
-            # Check balance check loops to make sure users can buy accounts cleanly
-            display_price = custom_prices.get(detected_country_name, DEFAULT_PRICE)
-            await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
-            bal_row = await cursor.fetchone()
-            user_bal = bal_row[0] if bal_row else 0
+                    phone_to_buy, api_id_to_buy, api_hash_to_buy, session_to_buy, detected_country_name = selected_account
+                    display_price = custom_prices.get(detected_country_name, DEFAULT_PRICE)
+                    
+                    # 2. Check balance (using the active cursor)
+                    await cursor.execute("SELECT balance FROM users WHERE uid = %s", (str(uid),))
+                    bal_row = await cursor.fetchone()
+                    user_bal = bal_row[0] if bal_row else 0
 
-            if user_bal < display_price:
-                await event.respond(f"❌ **Insufficient Funds!**\n\nThis account costs **₹{display_price:.2f}**, but your current balance is **₹{user_bal:.2f}**.")
-                return
+                    if user_bal < display_price:
+                        await event.respond(f"❌ **Insufficient Funds!**\n\nThis account costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.")
+                        return
 
-            # Deduct balance and update tables clearly
-            await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
-            await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
+                    # 3. Process the transaction updates cleanly
+                    await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, str(uid)))
+                    await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
 
-            # Packaging connection components safely into the data rows string variable parameter
-            bundled_meta = f"{api_id_to_buy}|{api_hash_to_buy}|{session_to_buy}"
-            await cursor.execute(
-                "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
-                (phone_to_buy, uid, bundled_meta)
-            )
-            await conn.commit()
+                    bundled_meta = f"{api_id_to_buy}|{api_hash_to_buy}|{session_to_buy}"
+                    await cursor.execute(
+                        "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
+                        (phone_to_buy, str(uid), bundled_meta)
+                    )
+                    await conn.commit()
 
+            # Delivery message triggers outside the connection loop after successful commit
             display_flag = country_flags.get(detected_country_name, "🇺🇳")
             success_msg = (
                 f"🌐 **Number reserved successfully**\n\n"

@@ -856,14 +856,12 @@ async def callback_handler(event):
     # # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):
         try:
-            # Extract the phone string from the split list index securely
+            # Extract the phone string payload securely
             _target_phone = data.split(":")
             if len(_target_phone) < 2:
                 await event.answer("❌ Invalid callback token payload schema.", alert=True)
                 return
             target_phone = _target_phone[1].strip()
-            if not target_phone.startswith("+"):
-                target_phone = "+" + target_phone
 
             await event.answer("📡 Connecting to account session mailbox...", alert=False)
             progress_msg = await event.respond("🔍 <i>Scanning internal Telegram (777000) notification logs...</i>", parse_mode='html')
@@ -872,41 +870,53 @@ async def callback_handler(event):
             api_hash_val = None
             session_str_val = None
 
-            # FIXED: Pull the credentials directly from available_accounts where they were saved via /addstock
+            # READ FROM ACTIVE_ORDERS INSTEAD OF THE DELETED STOCK
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute(
-                        "SELECT api_id, api_hash, string_session FROM available_accounts WHERE phone_number = %s", 
-                        (target_phone,)
-                    )
-                    row = await cursor.fetchone()
-                    
-                    if row:
-                        api_id_val, api_hash_val, session_str_val = row[0], row[1], row[2]
+                    # Clean up phone variations (+ or no +) to match active_orders accurately
+                    phone_variants = [target_phone]
+                    if target_phone.startswith("+"):
+                        phone_variants.append(target_phone[1:])
+                    else:
+                        phone_variants.append("+" + target_phone)
+
+                    for p in phone_variants:
+                        await cursor.execute(
+                            "SELECT status FROM active_orders WHERE phone_number = %s ORDER BY id DESC LIMIT 1" if "id" in globals() else "SELECT status FROM active_orders WHERE phone_number = %s LIMIT 1",
+                            (p,)
+                        )
+                        row = await cursor.fetchone()
+                        if row and row[0] and "|" in row[0]:
+                            try:
+                                # Split the stored session_string|api_id|api_hash format
+                                session_str_val, api_id_val, api_hash_val = row[0].split("|", 2)
+                                break
+                            except ValueError:
+                                pass
 
             if not session_str_val or not api_id_val or not api_hash_val:
-                await progress_msg.edit("❌ <b>Session Missing:</b> Account keys or session tokens could not be found or parsed.")
+                await progress_msg.edit("❌ <b>Session Missing:</b> Account credentials or keys could not be found for this active order.")
                 return
 
             try:
                 from telethon.sessions import StringSession
                 import re
 
-                # Start temporary backend client connection 
+                # Connect directly using the extracted session details
                 temp_client = TelegramClient(StringSession(session_str_val.strip()), int(str(api_id_val).strip()), api_hash_val.strip())
                 await temp_client.connect()
 
                 if not await temp_client.is_user_authorized():
-                    await progress_msg.edit("❌ <b>Session Revoked:</b> The logged session token string has expired or was closed.")
+                    await progress_msg.edit("❌ <b>Session Revoked:</b> The logged session token string has expired or was terminated.")
                     await temp_client.disconnect()
                     return
 
                 fetched_otp = None
-                # Scan the official service notifications channel (777000) inside the user application mailbox
+                # Scan official system notification logs channel (777000) inside the user application mailbox
                 async for msg in temp_client.iter_messages(777000, limit=5):
                     body_text = msg.text or ""
                     
-                    # Target pure 5-digit number patterns
+                    # Target the standard pure 5-digit verification pattern
                     digit_match = re.search(r'\b\d{5}\b', body_text)
                     if digit_match:
                         fetched_otp = digit_match.group(0)
@@ -918,16 +928,16 @@ async def callback_handler(event):
                     success_text = (
                         f"🔑 <b>Your Telegram Login Code:</b>\n"
                         f"<code>{fetched_otp}</code>\n\n"
-                        f"⚡ <i>Enter this 5-digit number into your active application client right now to sign in!</i>"
+                        f"⚡ <i>Enter this 5-digit number into your Telegram application right now to sign in!</i>"
                     )
                     await progress_msg.edit(success_text, parse_mode='html')
                 else:
                     await progress_msg.edit(
                         "⏳ <b>No Code Detected Yet!</b>\n\n"
                         "1. Make sure you typed the number correctly inside your client application.\n"
-                        "2. If it asks you, make sure to click <b>'Send code as SMS'</b> inside your log screen to trigger the cloud push.\n\n"
+                        "2. Click <b>'Send code as SMS'</b> or re-request the code on your Telegram login screen to trigger the system push.\n\n"
                         "<i>Please wait 15 seconds and tap the button to check again.</i>",
-                        annotate_links=False, parse_mode='html'
+                        parse_mode='html'
                     )
 
             except Exception as client_err:
@@ -935,7 +945,7 @@ async def callback_handler(event):
 
         except Exception as e:
             logging.error(f"Error during storefront verification handler: {e}")
-            await event.respond("❌ An error occurred while processing your selection request.")
+            await event.respond("❌ An error occurred while processing your verification request.")
             return
 
 async def send_telegram_services_menu(event):

@@ -817,7 +817,7 @@ async def callback_handler(event):
                     display_price = custom_prices.get(detected_country_name, DEFAULT_PRICE)
                     
                     # 2. Check balance (using the active cursor)
-                    await cursor.execute("SELECT balance FROM users WHERE uid = %s", (str(uid),))
+                    await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
                     bal_row = await cursor.fetchone()
                     user_bal = bal_row[0] if bal_row else 0
 
@@ -826,13 +826,13 @@ async def callback_handler(event):
                         return
 
                     # 3. Process the transaction updates cleanly
-                    await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, str(uid)))
+                    await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
                     await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
 
                     bundled_meta = f"{session_to_buy.strip()}|{str(api_id_to_buy).strip()}|{api_hash_to_buy.strip()}"
                     await cursor.execute(
                         "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
-                        (phone_to_buy, str(uid), bundled_meta)
+                        (phone_to_buy, uid, bundled_meta)
                     )
                     await conn.commit()
 

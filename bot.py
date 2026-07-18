@@ -944,6 +944,9 @@ async def callback_handler(event):
         display_flag = country_flags.get(detected_country, "🌐")
         display_price = custom_prices.get(detected_country, DEFAULT_PRICE)
 
+        from telethon import Button
+        recheck_kb = [[Button.inline("🔄 Re-Check OTP", data=f"checkotp:{target_phone}")]]
+
         custom_otp_message = (
             f"{display_flag} **{detected_country}**   ₹{display_price:.1f}   ✅\n\n"
             f"📞 **Phone Number:** `{target_phone}`\n"
@@ -951,9 +954,6 @@ async def callback_handler(event):
             f"⚠️ **Note:** The Re-Request button is active for 24 hours. "
             f"After that, you'll need to request a new number."
         )
-  
-            from telethon import Button
-            recheck_kb = [[Button.inline("🔄 Re-Check OTP", data=f"checkotp:{target_phone}")]]
             await event.edit(custom_otp_message, buttons=recheck_kb)
 
     except Exception as e:

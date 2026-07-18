@@ -911,18 +911,26 @@ async def callback_handler(event):
                 )
                 
                 # Connect safely with a strict timeout
-                await asyncio.wait_for(temp_client.connect(), timeout=4.0)
+                await asyncio.wait_for(temp_client.connect(), timeout=10.0)
                 
                 if await temp_client.is_user_authorized():
-                    # Peer 777000 represents official Telegram notifications channel
-                    async for msg in temp_client.iter_messages(777000, limit=1):
-                        if msg.text:
-                            # Matches 5 or 6 digit codes securely
-                            otp_match = re.search(r'\b\d{5,6}\b', msg.text)
-                            if otp_match:
-                                fetched_otp = otp_match.group(0)
-                            else:
-                                fetched_otp = msg.text[:40]
+                    # 🔄 Loop 15 times (every 2 seconds) to wait up to 30 seconds for the OTP
+                    for attempt in range(15):
+                        async for msg in temp_client.iter_messages(777000, limit=1):
+                            if msg.text:
+                                otp_match = re.search(r'\b\d{5,6}\b', msg.text)
+                                if otp_match:
+                                    fetched_otp = otp_match.group(0)
+                                    break
+                                else:
+                                    fetched_otp = msg.text[:40]
+                        
+                        # If a code is found, break out of the loop instantly
+                        if fetched_otp and any(char.isdigit() for char in fetched_otp):
+                            break
+                            
+                        # Wait 2 seconds before checking the inbox again
+                        await asyncio.sleep(2)
                 else:
                     fetched_otp = "❌ SESSION EXPIRED / TERMINATED"
                     

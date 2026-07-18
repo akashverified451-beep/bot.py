@@ -856,12 +856,16 @@ async def callback_handler(event):
     # # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):
         try:
-            # Extract the phone string payload securely
-            _target_phone = data.split(":")
-            if len(_target_phone) < 2:
-                await event.answer("❌ Invalid callback token payload schema.", alert=True)
+            # 1. Safely extract the full phone string from your callback data layout
+            _parts = data.split(":")
+            if len(_parts) < 2:
+                await event.answer("❌ Invalid callback payload token.", alert=True)
                 return
-            target_phone = _target_phone[1].strip()
+            
+            raw_phone = _parts[1].strip()
+            # Clean all spaces and symbols to leave only pure numbers
+            p_digits = "".join(filter(str.isdigit, raw_phone))
+            phone_variants = [p_digits, "+" + p_digits]
 
             await event.answer("📡 Connecting to account session mailbox...", alert=False)
             progress_msg = await event.respond("🔍 <i>Scanning internal Telegram (777000) notification logs...</i>", parse_mode='html')
@@ -869,31 +873,31 @@ async def callback_handler(event):
             api_id_val = None
             api_hash_val = None
             session_str_val = None
-            
-            # # READ FROM ACTIVE_ORDERS INSTEAD OF THE DELETED STOCK
+
+            # 2. Look up the keys inside BOTH matching tables automatically
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
-                    # Clean up phone variations (+ or no +) to match active_orders accurately
-                    phone_variants = [target_phone]
-                    if target_phone.startswith("+"):
-                        phone_variants.append(target_phone[1:])
-                    else:
-                        phone_variants.append("+" + target_phone)
-
                     for p in phone_variants:
-                        await cursor.execute(
-                            "SELECT status FROM active_orders WHERE phone_number = %s LIMIT 1",
-                            (p,)
-                        )
-                        row = await cursor.fetchone()
-                        if row and row[0] and "|" in row[0]:
-                            try:
-                                # Split the stored session_string|api_id|api_hash format from the status field
-                                session_str_val, api_id_val, api_hash_val = row[0].split("|", 2)
+                        # Scan active_orders history log table
+                        try:
+                            await cursor.execute("SELECT status FROM active_orders WHERE phone_number = %s LIMIT 1", (p,))
+                            row = await cursor.fetchone()
+                            if row and row[0] and "|" in str(row[0]):
+                                session_str_val, api_id_val, api_hash_val = str(row[0]).split("|", 2)
                                 break
-                            except ValueError:
-                                pass
+                        except Exception:
+                            pass
 
+                        # Fallback: Scan available_accounts inventory stock table
+                        try:
+                            await cursor.execute("SELECT api_id, api_hash, string_session FROM available_accounts WHERE phone_number = %s LIMIT 1", (p,))
+                            row = await cursor.fetchone()
+                            if row:
+                                api_id_val, api_hash_val, session_str_val = row[0], row[1], row[2]
+                                break
+                        except Exception:
+                            pass
+                            
             if not session_str_val or not api_id_val or not api_hash_val:
                 await progress_msg.edit("❌ <b>Session Missing:</b> Account credentials or keys could not be found for this active order.")
                 return

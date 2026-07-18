@@ -122,7 +122,7 @@ async def global_message_handler(event):
     except Exception as e:
         logging.error(f"User check-in database error: {e}")
 
-    # CLEAN REPAIRED /addstock COMMAND HANDLER
+    # === BRAND NEW BULLETPROOF /ADDSTOCK SYSTEM ===
     if text.startswith("/addstock") and uid == ADMIN_TELEGRAM_ID:
         if " " not in text:
             await event.respond("❌ **Format Mismatch!** Use:\n`/addstock phone,api_id,api_hash,session_str,price(optional)`")
@@ -131,35 +131,34 @@ async def global_message_handler(event):
 
         try:
             raw_content = text.replace("/addstock", "").strip()
-            raw_parts = raw_content.split(",")
             
-            # This completely removes hidden line breaks and mobile spaces
-            args_list = []
-            for item in raw_parts:
-                cleaned_item = item.strip().replace("\n", "").replace("\r", "").replace(" ", "")
-                if cleaned_item:
-                    args_list.append(cleaned_item)
+            # Remove any unwanted hidden newlines or mobile spaces from the entire text first
+            raw_content = raw_content.replace("\n", "").replace("\r", "").replace(" ", "")
+            
+            # Split using commas, but ONLY split the first 4 commas so the equal signs (=) at the end are safe!
+            args_list = raw_content.split(",", 4)
 
             if len(args_list) < 4:
                 await event.respond(f"❌ **Error:** Insufficient parameters found. Detected {len(args_list)} parts out of 4 required.")
                 event.handled = True
                 return
 
-            phone = args_list[0]
-            api_id_val = args_list[1]
-            api_hash_val = args_list[2]
-            session_str_val = args_list[3]
+            phone = args_list[0].strip()
+            api_id_val = args_list[1].strip()
+            api_hash_val = args_list[2].strip()
+            session_str_val = args_list[3].strip()
 
+            # Handle the optional price field safely if it exists
             set_custom_price = None
-            if len(args_list) >= 5:
+            if len(args_list) == 5:
                 try:
-                    set_custom_price = float(args_list[4])
+                    set_custom_price = float(args_list[4].strip())
                 except ValueError:
                     pass
 
             progress_msg = await event.respond("⏳ **Verifying login credentials against Telegram servers...**")
 
-            # Create temporary verification client
+            # Create a temporary connection to test if the account works
             temp_client = TelegramClient(
                 StringSession(session_str_val),
                 int(api_id_val),
@@ -178,10 +177,11 @@ async def global_message_handler(event):
                 await temp_client.disconnect()
 
             if not is_valid:
-                await progress_msg.edit("❌ **Stock Rejected!** The session string or API credentials are invalid.")
+                await progress_msg.edit("❌ **Stock Rejected!** This session string or API credential has expired or is invalid.")
                 event.handled = True
                 return
 
+            # Detect Country Category Automatically
             prefix_to_country = {
                 "+7": "Russia", "+1": "United States/Canada", "+44": "United Kingdom",
                 "+91": "India", "+62": "Indonesia", "+254": "Kenya", "+81": "Japan"
@@ -194,6 +194,7 @@ async def global_message_handler(event):
                     detected_country = prefix_to_country[prefix]
                     break
 
+            # Save everything perfectly into your database tables
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
                     await cursor.execute(
@@ -218,12 +219,12 @@ async def global_message_handler(event):
             await progress_msg.edit(f"✅ **Stock Verified & Active!**\n\n📱 **Phone:** `{phone}`\n🌍 **Country:** {detected_country}{price_note}")
 
         except Exception as e:
-            logging.error(f"Syntax parsing failure inside Addstock module: {e}")
-            await event.respond("❌ **Format Error!** Use standard comma layout profiles.")
+            logging.error(f"Addstock module error: {e}")
+            await event.respond(f"❌ **System Error:** <code>{str(e)}</code>", parse_mode='html')
 
         event.handled = True
         return
-
+        
     # Admin Quick Price Modifier Command
     if (text.startswith("/updateprice") or text.startswith("/updatestock")) and uid == ADMIN_TELEGRAM_ID:
         try:

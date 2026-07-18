@@ -122,17 +122,18 @@ async def global_message_handler(event):
     except Exception as e:
         logging.error(f"User check-in database error: {e}")
 
-        # ==========================================
-        # CLEAN REPAIRED /addstock COMMAND HANDLER
-        # ==========================================
-        if text.startswith("/addstock") and uid == 8393210427:
-            try:
-                raw_args = text.replace("/addstock", "").strip()
-                
-                # Vaporize hidden lines and accidental spaces instantly
-                cleaned_args = "".join(raw_args.split())
-                args_list = cleaned_args.split(",")
-                
+    # # CLEAN REPAIRED /addstock COMMAND HANDLER
+    if text.startswith("/addstock") and uid == ADMIN_TELEGRAM_ID:
+        if " " not in text:
+            await event.respond("❌ **Format Mismatch!** Use:\n`/addstock phone,api_id,api_hash,session_str,price(optional)`")
+            event.handled = True
+            return
+
+        try:
+            raw_args = text.replace("/addstock", "").strip()
+            cleaned_args = "".join(raw_args.split())
+            args_list = cleaned_args.split(",")
+
                 if len(args_list) < 4:
                     raise ValueError("Insufficient arguments provided.")
 

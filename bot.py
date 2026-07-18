@@ -925,8 +925,29 @@ async def callback_handler(event):
                                 else:
                                     fetched_otp = msg.text[:40]
                         
-                        # If a code is found, break out of the loop instantly
+                        # If a code is found, build the layout text and update the screen instantly
                         if fetched_otp and any(char.isdigit() for char in fetched_otp):
+                            # Self-contained variable defaults to prevent NameErrors inside the loop
+                            custom_prices = await get_country_prices()
+                            DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+                            country_flags = {"Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦", "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"}
+                            
+                            prefix_to_country = {"+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"}
+                            detected_country = "Other International"
+                            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                                if target_phone.startswith(prefix):
+                                    detected_country = prefix_to_country[prefix]
+                                    break
+                            
+                            custom_otp_message = (
+                                f"{country_flags.get(detected_country, '🌐')} **{detected_country}**   ₹{custom_prices.get(detected_country, DEFAULT_PRICE):.1f}   ✅\n\n"
+                                f"📞 **Phone Number:** `{target_phone}`\n"
+                                f"📩 **OTP:** **`{fetched_otp}`**\n\n"
+                                f"⚠️ **Note:** The Re-Request button is active for 24 hours."
+                            )
+                            from telethon import Button
+                            recheck_kb = [[Button.inline("🔄 Re-Check OTP", data=f"checkotp:{target_phone}")]]
+                            await event.edit(custom_otp_message, buttons=recheck_kb)
                             break
                             
                         # Wait 2 seconds before checking the inbox again

@@ -264,6 +264,84 @@ async def global_message_handler(event):
         event.handled = True
         return
 
+    # Admin Stock Session Validator Engine
+    if text.startswith("/checkstock") and int(uid) == int(ADMIN_TELEGRAM_ID):
+        try:
+            status_msg = await event.respond("🔍 **Scanning inventory database...**\nInitializing login handshakes for all stock...")
+            
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    # Pull all current available accounts
+                    await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts")
+                    all_stock = await cursor.fetchall()
+
+            if not all_stock:
+                await status_msg.edit("🛒 **Your stock inventory is completely empty!** nothing to validate.")
+                return
+
+            total_accounts = len(all_stock)
+            checked_count = 0
+            dead_count = 0
+            
+            from telethon.sessions import StringSession
+            
+            for phone, api_id, api_hash, session_str in all_stock:
+                checked_count += 1
+                is_alive = False
+                
+                # Periodically update the admin so you can see live progress
+                if checked_count % 2 == 0 or checked_count == total_accounts:
+                    await status_msg.edit(f"⚡ **Validating Stock:** `{checked_count}`/`{total_accounts}` accounts processed...")
+
+                try:
+                    # Setup temporary diagnostic client
+                    temp_check = TelegramClient(
+                        StringSession(str(session_str or "").strip()), 
+                        int(api_id), 
+                        str(api_hash or "").strip(),
+                        connection_retries=1,
+                        retry_delay=1,
+                        receive_updates=False
+                    )
+                    
+                    # Connect with a secure timeout window
+                    await asyncio.wait_for(temp_check.connect(), timeout=8.0)
+                    
+                    if await temp_check.is_user_authorized():
+                        is_alive = True
+                    
+                    await temp_check.disconnect()
+                    
+                except Exception as check_err:
+                    logging.error(f"Validation connectivity fault for {phone}: {check_err}")
+                    is_alive = False
+
+                # If the account session is dead or expired, wipe it from inventory instantly
+                if not is_alive:
+                    dead_count += 1
+                    async with await get_db_connection() as conn:
+                        async with conn.cursor() as cursor:
+                            await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone,))
+                            await conn.commit()
+
+            # Final summary report sent to Admin
+            live_count = total_accounts - dead_count
+            report_msg = (
+                f"📊 **Inventory Audit Completed!**\n\n"
+                f"📦 **Total Accounts Scanned:** `{total_accounts}`\n"
+                f"✅ **Active/Valid Sessions:** `{live_count}`\n"
+                f"🗑️ **Dead Sessions Deleted:** `{dead_count}`\n\n"
+                f"Your active storefront inventory has been cleaned and is safe for users."
+            )
+            await status_msg.edit(report_msg)
+
+        except Exception as global_audit_err:
+            logging.error(f"Global stock audit system crash: {global_audit_err}")
+            await event.respond("❌ **Critical breakdown inside inventory validator engine.**")
+            
+        event.handled = True
+        return
+    
     # Admin Stock Verification & Cleanup Engine
     if text.startswith("/cleanstock") and uid == ADMIN_TELEGRAM_ID:
         try:

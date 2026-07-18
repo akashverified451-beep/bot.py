@@ -761,49 +761,36 @@ async def callback_handler(event):
         await event.answer()
         return
 
-    # # 1. First Step: User clicks a country purchase button
-    if data.startswith("buy_tg_"):
+    # Country Button Click Selection Handler
+    elif data.startswith("buy_tg_"):
+        target_slug = data.replace("buy_tg_", "").strip()
+        uid = event.sender_id
+        
         try:
-            await event.answer("Validating warehouse stock pipeline...", alert=False)
-            target_slug = data.replace("buy_tg_", "").strip()
-
-            # Fetch live database prices dynamically instead of hardcoding
-            custom_prices = await get_country_prices()
-            DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
-
-            country_flags = {
-                "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
-                "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
-            }
-
-            prefix_to_country = {
-                "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh",
-                "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran",
-                "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya",
-                "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", 
-                "+977": "Nepal", "+95": "Myanmar"
-            }
-
-            canada_area_codes = [
-                "204", "226", "236", "249", "250", "431", "437", "438", "450", "506", "514", 
-                "519", "548", "579", "581", "587", "604", "613", "639", "647", "705", "709", 
-                "742", "778", "780", "782", "825", "867", "873", "902", "905"
-            ]
-            
-            # ✅ Open the database connection once for the entire purchase process
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
-                    
-                    # 1. Fetch available stock items
+                    # Fetch all raw stock matching available criteria
                     await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts")
                     all_stock = await cursor.fetchall()
 
                     selected_account = None
-                    for phone, api_id, api_hash, session_str in all_stock:
-                        if not phone: 
-                            continue
+                    custom_prices = await get_country_prices()
+                    DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+
+                    # Dynamic Prefix Lookup Arrays
+                    prefix_to_country = {
+                        "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
+                        "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
+                        "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
+                        "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
+                    }
+                    canada_area_codes = ["204", "226", "249", "289", "306", "343", "365", "403", "416", "418", "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819", "825", "867", "873", "902", "905"]
+
+                    # Filter and match inventory profiles smoothly
+                    for account in all_stock:
+                        phone, api_id, api_hash, session_str = account
                         clean_phone = phone.strip()
-                        if not clean_phone.startswith("+"): 
+                        if not clean_phone.startswith("+"):
                             clean_phone = "+" + clean_phone
                         
                         detected_country_name = "Other International"
@@ -815,7 +802,7 @@ async def callback_handler(event):
                                     detected_country_name = country
                                     break
                         
-                        current_slug = detected_country_name.lower().replace(' ', '_')[:15]
+                        current_slug = detected_country_name.lower().replace(' ', '')[:15]
                         if current_slug == target_slug:
                             selected_account = (phone, api_id, api_hash, session_str, detected_country_name)
                             break
@@ -824,51 +811,55 @@ async def callback_handler(event):
                         await event.respond("⚠️ **Out of Stock!** No available numbers match your requested country.")
                         return
 
-        phone_to_buy, api_id_to_buy, api_hash_to_buy, session_to_buy, detected_country_name = selected_account
-        display_price = custom_prices.get(detected_country_name, DEFAULT_PRICE)
+                    # Unpack matched credential metrics safely
+                    phone_to_buy, api_id_to_buy, api_hash_to_buy, session_to_buy, detected_country_name = selected_account
+                    display_price = custom_prices.get(detected_country_name, DEFAULT_PRICE)
 
-        # Check balance
-        await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
-        bal_row = await cursor.fetchone()
-        user_bal = bal_row[0] if (bal_row and bal_row[0] is not None) else 0
+                    # Verify transaction financial viability
+                    await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
+                    bal_row = await cursor.fetchone()
+                    user_bal = bal_row[0] if (bal_row and bal_row[0] is not None) else 0
 
-        if user_bal < display_price:
-            await event.respond(f"❌ **Insufficient Funds!**\n\nThis account costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.")
-            return
+                    if user_bal < display_price:
+                        await event.respond(f"❌ **Insufficient Funds!**\n\nThis account costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.")
+                        return
 
-        # Process transaction records cleanly
-        await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
-        await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
-        
-        # Safe format sanitization layer to fully absorb database irregularities 
-        clean_session = str(session_to_buy or "").strip()
-        clean_api_id = str(api_id_to_buy or "").strip()
-        clean_api_hash = str(api_hash_to_buy or "").strip()
-        
-        # Construct exact bundle configuration data layout
-        bundled_meta = f"{clean_session}|{clean_api_id}|{clean_api_hash}"
-        
-        await cursor.execute(
-            "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
-            (phone_to_buy, uid, bundled_meta)
-        )
-        await conn.commit()
+                    # Execute atomic purchase state transitions
+                    await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
+                    await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
+                    
+                    # Sanitize parameter items safely
+                    clean_session = str(session_to_buy or "").strip()
+                    clean_api_id = str(api_id_to_buy or "").strip()
+                    clean_api_hash = str(api_hash_to_buy or "").strip()
+                    
+                    # Pack dynamic database record config matching checkotp sequence
+                    bundled_meta = f"{clean_session}|{clean_api_id}|{clean_api_hash}"
+                    
+                    await cursor.execute(
+                        "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
+                        (phone_to_buy, uid, bundled_meta)
+                    )
+                    await conn.commit()
 
-        # Success visual distribution
-        display_flag = country_flags.get(detected_country_name, "🌍")
-        success_msg = (
-            f"🎉 **Number Reserved Successfully!**\n\n"
-            f"📞 **Phone:** `{phone_to_buy}`\n"
-            f"🌍 **Country:** {detected_country_name} {display_flag}\n"
-            f"💵 **Price:** ₹{display_price:.2f}\n\n"
-            f"⚠️ **Note:** Your account reservation is active. Use the button below to check your dynamic inbox."
-        )
-        
-        from telethon import Button
-        recheck_kb = [[Button.inline("🔄 Get OTP", data=f"checkotp:{phone_to_buy}")]]
-        await event.respond(success_msg, buttons=recheck_kb)
+            # Output success metrics outside the active database stream context
+            country_flags = {"Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦", "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"}
+            display_flag = country_flags.get(detected_country_name, "🌍")
+            
+            success_msg = (
+                f"🎉 **Number Reserved Successfully!**\n\n"
+                f"📞 **Phone:** `{phone_to_buy}`\n"
+                f"🌍 **Country:** {detected_country_name} {display_flag}\n"
+                f"💵 **Price:** ₹{display_price:.2f}\n\n"
+                f"⚠️ **Note:** Your account reservation is active. Use the button below to check your live inbox."
+            )
+            
+            from telethon import Button
+            recheck_kb = [[Button.inline("🔄 Get OTP", data=f"checkotp:{phone_to_buy}")]]
+            await event.respond(success_msg, buttons=recheck_kb)
 
         except Exception as e:
+            import logging
             logging.error(f"Error during storefront purchase handler: {e}")
             await event.respond("❌ An error occurred while processing your selection request.")
             return

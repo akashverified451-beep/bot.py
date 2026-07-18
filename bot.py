@@ -130,24 +130,24 @@ async def global_message_handler(event):
             return
 
         try:
+            # FIX: We split by comma directly and strip the trailing/leading whitespace from each part individually
             raw_args = text.replace("/addstock", "").strip()
-            cleaned_args = "".join(raw_args.split())
-            args_list = cleaned_args.split(",")
+            args_list = [arg.strip() for arg in raw_args.split(",")]
 
             if len(args_list) < 4:
-                await event.respond("❌ **Error:** Insufficient arguments provided.")
+                await event.respond("❌ **Error:** Insufficient arguments provided. You need at least 4 items separated by commas.")
                 event.handled = True
                 return
 
-            phone = args_list[0].strip()
-            api_id_val = args_list[1].strip()
-            api_hash_val = args_list[2].strip()
-            session_str_val = args_list[3].strip()
+            phone = args_list[0]
+            api_id_val = args_list[1]
+            api_hash_val = args_list[2]
+            session_str_val = args_list[3]
 
             set_custom_price = None
             if len(args_list) >= 5:
                 try:
-                    set_custom_price = float(args_list[4].strip())
+                    set_custom_price = float(args_list[4])
                 except ValueError:
                     pass
 

@@ -174,9 +174,6 @@ async def global_message_handler(event):
                 event.handled = True
                 return
 
-                    event.handled = True
-                    return
-
                 # Derive country mapping targets based on phone prefixes
                 prefix_to_country = {
                     "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh",

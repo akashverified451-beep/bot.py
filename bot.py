@@ -869,8 +869,8 @@ async def callback_handler(event):
             api_id_val = None
             api_hash_val = None
             session_str_val = None
-
-            # READ FROM ACTIVE_ORDERS INSTEAD OF THE DELETED STOCK
+            
+            # # READ FROM ACTIVE_ORDERS INSTEAD OF THE DELETED STOCK
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
                     # Clean up phone variations (+ or no +) to match active_orders accurately
@@ -882,13 +882,13 @@ async def callback_handler(event):
 
                     for p in phone_variants:
                         await cursor.execute(
-                            "SELECT status FROM active_orders WHERE phone_number = %s ORDER BY id DESC LIMIT 1" if "id" in globals() else "SELECT status FROM active_orders WHERE phone_number = %s LIMIT 1",
+                            "SELECT status FROM active_orders WHERE phone_number = %s LIMIT 1",
                             (p,)
                         )
                         row = await cursor.fetchone()
                         if row and row[0] and "|" in row[0]:
                             try:
-                                # Split the stored session_string|api_id|api_hash format
+                                # Split the stored session_string|api_id|api_hash format from the status field
                                 session_str_val, api_id_val, api_hash_val = row[0].split("|", 2)
                                 break
                             except ValueError:

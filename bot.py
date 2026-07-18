@@ -824,40 +824,49 @@ async def callback_handler(event):
                         await event.respond("⚠️ **Out of Stock!** No available numbers match your requested country.")
                         return
 
-                    phone_to_buy, api_id_to_buy, api_hash_to_buy, session_to_buy, detected_country_name = selected_account
-                    display_price = custom_prices.get(detected_country_name, DEFAULT_PRICE)
-                    
-                    # 2. Check balance (using the active cursor)
-                    await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
-                    bal_row = await cursor.fetchone()
-                    user_bal = bal_row[0] if bal_row else 0
+        phone_to_buy, api_id_to_buy, api_hash_to_buy, session_to_buy, detected_country_name = selected_account
+        display_price = custom_prices.get(detected_country_name, DEFAULT_PRICE)
 
-                    if user_bal < display_price:
-                        await event.respond(f"❌ **Insufficient Funds!**\n\nThis account costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.")
-                        return
+        # Check balance
+        await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
+        bal_row = await cursor.fetchone()
+        user_bal = bal_row[0] if (bal_row and bal_row[0] is not None) else 0
 
-                    # 3. Process the transaction updates cleanly
-                    await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
-                    await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
+        if user_bal < display_price:
+            await event.respond(f"❌ **Insufficient Funds!**\n\nThis account costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.")
+            return
 
-                    bundled_meta = f"{session_to_buy.strip()}|{str(api_id_to_buy).strip()}|{api_hash_to_buy.strip()}"
-                    await cursor.execute(
-                        "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
-                        (phone_to_buy, uid, bundled_meta)
-                    )
-                    await conn.commit()
+        # Process transaction records cleanly
+        await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
+        await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
+        
+        # Safe format sanitization layer to fully absorb database irregularities 
+        clean_session = str(session_to_buy or "").strip()
+        clean_api_id = str(api_id_to_buy or "").strip()
+        clean_api_hash = str(api_hash_to_buy or "").strip()
+        
+        # Construct exact bundle configuration data layout
+        bundled_meta = f"{clean_session}|{clean_api_id}|{clean_api_hash}"
+        
+        await cursor.execute(
+            "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
+            (phone_to_buy, uid, bundled_meta)
+        )
+        await conn.commit()
 
-            # Delivery message triggers outside the connection loop after successful commit
-            display_flag = country_flags.get(detected_country_name, "🌍")
-            success_msg = (
-                f"🌍 **Number reserved successfully**\n\n"
-                f"📱 **Phone:** `{phone_to_buy}`\n"
-                f"🌍 **Country:** {detected_country_name} {display_flag}\n"
-                f"💵 **Price:** ₹{display_price:.2f}\n\n"
-                f"**Note:** Your account reservation is active. Use the button below to check your dynamic inbox."
-            )
-
-            await event.respond(success_msg, buttons=[[Button.inline("📩 Check OTP", data=f"checkotp:{phone_to_buy}")]])
+        # Success visual distribution
+        display_flag = country_flags.get(detected_country_name, "🌍")
+        success_msg = (
+            f"🎉 **Number Reserved Successfully!**\n\n"
+            f"📞 **Phone:** `{phone_to_buy}`\n"
+            f"🌍 **Country:** {detected_country_name} {display_flag}\n"
+            f"💵 **Price:** ₹{display_price:.2f}\n\n"
+            f"⚠️ **Note:** Your account reservation is active. Use the button below to check your dynamic inbox."
+        )
+        
+        from telethon import Button
+        recheck_kb = [[Button.inline("🔄 Get OTP", data=f"checkotp:{phone_to_buy}")]]
+        await event.respond(success_msg, buttons=recheck_kb)
 
         except Exception as e:
             logging.error(f"Error during storefront purchase handler: {e}")

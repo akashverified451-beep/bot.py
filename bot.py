@@ -856,15 +856,15 @@ async def callback_handler(event):
     # # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):
         try:
-            # 1. Safely extract the full phone string from your callback data layout
+            # 1. Extract and split the callback data securely
             _parts = data.split(":")
             if len(_parts) < 2:
                 await event.answer("❌ Invalid callback payload token.", alert=True)
                 return
             
-            raw_phone = _parts[1].strip()
-            # Clean all spaces and symbols to leave only pure numbers
-            p_digits = "".join(filter(str.isdigit, raw_phone))
+            # FIXED: Kept names uniform and added digit grouping checks
+            target_phone = _parts[1].strip()
+            p_digits = "".join(filter(str.isdigit, target_phone))
             phone_variants = [p_digits, "+" + p_digits]
 
             await event.answer("📡 Connecting to account session mailbox...", alert=False)
@@ -874,7 +874,7 @@ async def callback_handler(event):
             api_hash_val = None
             session_str_val = None
 
-            # 2. Look up the keys inside BOTH matching tables automatically
+            # 2. Query both database log architectures systematically
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
                     for p in phone_variants:
@@ -897,9 +897,10 @@ async def callback_handler(event):
                                 break
                         except Exception:
                             pass
-                            
+
+            # 3. Clean error trigger boundary check
             if not session_str_val or not api_id_val or not api_hash_val:
-                await progress_msg.edit("❌ <b>Session Missing:</b> Account credentials or keys could not be found for this active order.")
+                await progress_msg.edit(f"❌ <b>Session Missing:</b> Account credentials could not be found for phone variant: <code>{phone_variants}</code>")
                 return
 
             try:

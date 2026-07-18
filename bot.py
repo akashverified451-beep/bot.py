@@ -122,7 +122,7 @@ async def global_message_handler(event):
     except Exception as e:
         logging.error(f"User check-in database error: {e}")
 
-    # # CLEAN REPAIRED /addstock COMMAND HANDLER
+    # CLEAN REPAIRED /addstock COMMAND HANDLER
     if text.startswith("/addstock") and uid == ADMIN_TELEGRAM_ID:
         if " " not in text:
             await event.respond("❌ **Format Mismatch!** Use:\n`/addstock phone,api_id,api_hash,session_str,price(optional)`")
@@ -134,44 +134,46 @@ async def global_message_handler(event):
             cleaned_args = "".join(raw_args.split())
             args_list = cleaned_args.split(",")
 
-                if len(args_list) < 4:
-                    raise ValueError("Insufficient arguments provided.")
+            if len(args_list) < 4:
+                raise ValueError("Insufficient arguments provided.")
 
-                phone = args_list[0].strip()
-                api_id_val = args_list[1].strip()
-                api_hash_val = args_list[2].strip()
-                session_str = args_list[3].strip()
+            phone = args_list[0].strip()
+            api_id_val = args_list[1].strip()
+            api_hash_val = args_list[2].strip()
+            session_str_val = args_list[3].strip()
 
-                # Parse custom price parameter safely if provided
-                set_custom_price = None
-                if len(args_list) >= 5:
-                    try:
-                        set_custom_price = float(args_list[4].strip())
-                    except ValueError:
-                        pass
-
-                progress_msg = await event.respond("⏳ **Verifying login credentials against Telegram servers...**")
-
-                # Create temporary verification client
-                temp_client = TelegramClient(
-                    StringSession(session_str),
-                    int(api_id_val),
-                    api_hash_val,
-                    connection_retries=1
-                )
-                
-                is_valid = False
+            set_custom_price = None
+            if len(args_list) >= 5:
                 try:
-                    await temp_client.connect()
-                    is_valid = await temp_client.is_user_authorized()
-                except Exception as auth_error:
-                    logging.warning(f"Session string check failed: {auth_error}")
-                    is_valid = False
-                finally:
-                    await temp_client.disconnect()
+                    set_custom_price = float(args_list[4].strip())
+                except ValueError:
+                    pass
 
-                if not is_valid:
-                    await progress_msg.edit("❌ **Stock Rejected!** The session string or API credentials are invalid.")
+            progress_msg = await event.respond("⏳ **Verifying login credentials against Telegram servers...**")
+
+            # Create temporary verification client
+            temp_client = TelegramClient(
+                StringSession(session_str_val),
+                int(api_id_val),
+                api_hash_val,
+                connection_retries=1
+            )
+
+            is_valid = False
+            try:
+                await temp_client.connect()
+                is_valid = await temp_client.is_user_authorized()
+            except Exception as auth_error:
+                logging.warning(f"Session string check failed: {auth_error}")
+                is_valid = False
+            finally:
+                await temp_client.disconnect()
+
+            if not is_valid:
+                await progress_msg.edit("❌ **Stock Rejected!** The session string or API credentials are invalid.")
+                event.handled = True
+                return
+
                     event.handled = True
                     return
 
@@ -200,7 +202,7 @@ async def global_message_handler(event):
                             api_id = EXCLUDED.api_id, 
                             api_hash = EXCLUDED.api_hash, 
                             string_session = EXCLUDED.string_session""",
-                            (phone, api_id_val, api_hash_val, session_str)
+                            (phone, api_id_val, api_hash_val, session_str_val)
                         )
                         
                         price_note = ""

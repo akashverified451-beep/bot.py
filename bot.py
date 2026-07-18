@@ -957,11 +957,6 @@ async def callback_handler(event):
         
         await event.edit(custom_otp_message, buttons=recheck_kb)
 
-    except Exception as e:
-        import logging
-        logging.error(f"Error executing helper menu: {e}")
-        await event.respond("❌ Critical Error generating stock layout.")
-
 # --- Execution Runtime Initialization Loop ---
 async def main():
     try:

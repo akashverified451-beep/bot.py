@@ -954,7 +954,8 @@ async def callback_handler(event):
             f"⚠️ **Note:** The Re-Request button is active for 24 hours. "
             f"After that, you'll need to request a new number."
         )
-            await event.edit(custom_otp_message, buttons=recheck_kb)
+        
+        await event.edit(custom_otp_message, buttons=recheck_kb)
 
     except Exception as e:
         import logging

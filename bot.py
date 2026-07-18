@@ -862,6 +862,20 @@ async def callback_handler(event):
             
             from telethon import Button
             recheck_kb = [[Button.inline("🔄 Get OTP", data=f"checkotp:{phone_to_buy}")]]
+            
+            try:
+                admin_alert = (
+                    f"🛍️ **New Account Sold!**\n\n"
+                    f"👤 **User ID:** `{uid}`\n"
+                    f"📞 **Phone:** `{phone_to_buy}`\n"
+                    f"🌍 **Country:** {detected_country_name}\n"
+                    f"💵 **Price Earned:** ₹{display_price:.2f}"
+                )
+                await event.client.send_message(int(ADMIN_TELEGRAM_ID), admin_alert)
+            except Exception as alert_err:
+                import logging
+                logging.error(f"Failed sending admin sales notification: {alert_err}")
+          
             await event.respond(success_msg, buttons=recheck_kb)
 
         except Exception as e:

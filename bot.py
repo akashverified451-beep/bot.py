@@ -135,7 +135,9 @@ async def global_message_handler(event):
             args_list = cleaned_args.split(",")
 
             if len(args_list) < 4:
-                raise ValueError("Insufficient arguments provided.")
+                await event.respond("❌ **Error:** Insufficient arguments provided.")
+                event.handled = True
+                return
 
             phone = args_list[0].strip()
             api_id_val = args_list[1].strip()
@@ -174,57 +176,47 @@ async def global_message_handler(event):
                 event.handled = True
                 return
 
-                # Derive country mapping targets based on phone prefixes
-                prefix_to_country = {
-                    "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh",
-                    "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran",
-                    "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya",
-                    "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
-                }
-                
-                clean_phone = phone if phone.startswith("+") else "+" + phone
-                detected_country = "Other International"
-                for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-                    if clean_phone.startswith(prefix):
-                        detected_country = prefix_to_country[prefix]
-                        break
+            prefix_to_country = {
+                "+7": "Russia", "+1": "United States/Canada", "+44": "United Kingdom",
+                "+91": "India", "+62": "Indonesia", "+254": "Kenya", "+81": "Japan"
+            }
 
-                # Save sanitized configurations cleanly into PostgreSQL database storage layers
-                async with await get_db_connection() as conn:
-                    async with conn.cursor() as cursor:
+            clean_phone = phone if phone.startswith("+") else "+" + phone
+            detected_country = "Other International"
+            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                if clean_phone.startswith(prefix):
+                    detected_country = prefix_to_country[prefix]
+                    break
+
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute(
+                        """INSERT INTO available_accounts (phone_number, api_id, api_hash, string_session) 
+                           VALUES (%s, %s, %s, %s) 
+                           ON CONFLICT (phone_number) DO UPDATE SET 
+                           api_id = EXCLUDED.api_id, api_hash = EXCLUDED.api_hash, string_session = EXCLUDED.string_session""",
+                        (phone, api_id_val, api_hash_val, session_str_val)
+                    )
+
+                    price_note = ""
+                    if set_custom_price is not None:
                         await cursor.execute(
-                            """INSERT INTO available_accounts (phone_number, api_id, api_hash, string_session)
-                            VALUES (%s, %s, %s, %s)
-                            ON CONFLICT (phone_number) DO UPDATE SET
-                            api_id = EXCLUDED.api_id, 
-                            api_hash = EXCLUDED.api_hash, 
-                            string_session = EXCLUDED.string_session""",
-                            (phone, api_id_val, api_hash_val, session_str_val)
+                            """INSERT INTO country_prices (country, price) VALUES (%s, %s)
+                               ON CONFLICT (country) DO UPDATE SET price = EXCLUDED.price""",
+                            (detected_country, set_custom_price)
                         )
-                        
-                        price_note = ""
-                        if set_custom_price is not None:
-                            await cursor.execute(
-                                """INSERT INTO country_prices (country, price) VALUES (%s, %s)
-                                ON CONFLICT (country) DO UPDATE SET price = EXCLUDED.price""",
-                                (detected_country, set_custom_price)
-                            )
-                            price_note = f"\n💰 **Price Auto-Configured:** ₹{set_custom_price:.2f} for {detected_country}"
-                        
-                        await conn.commit()
+                        price_note = f"\n💰 **Price Auto-Configured:** ₹{set_custom_price}"
 
-                await progress_msg.edit(f"✅ **Stock Verified & Active!**\n\n📞 Phone: `{phone}`\n🌍 Target Group: **{detected_country}**{price_note}")
+                    await conn.commit()
 
-            except Exception as e:
-                logging.error(f"Syntax parsing failure inside Addstock module: {e}")
-                await event.respond(
-                    "❌ **Format Error!** Use one of these patterns:\n\n"
-                    "🔹 **With New Price:**\n`/addstock phone,api_id,api_hash,session,price`\n\n"
-                    "🔹 **Keep Current Price:**\n`/addstock phone,api_id,api_hash,session`"
-                )
-            
-            event.handled = True
-            return
+            await progress_msg.edit(f"✅ **Stock Verified & Active!**\n\n📱 **Phone:** `{phone}`\n🌍 **Country:** {detected_country}{price_note}")
+
+        except Exception as e:
+            logging.error(f"Syntax parsing failure inside Addstock module: {e}")
+            await event.respond("❌ **Format Error!** Use standard comma layout profiles.")
+
+        event.handled = True
+        return
 
     # Admin Quick Price Modifier Command
     if (text.startswith("/updateprice") or text.startswith("/updatestock")) and uid == ADMIN_TELEGRAM_ID:

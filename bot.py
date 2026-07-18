@@ -870,23 +870,17 @@ async def callback_handler(event):
             api_hash_val = None
             session_str_val = None
 
-            # Pull the credentials from your active database pool
+            # FIXED: Pull the credentials directly from available_accounts where they were saved via /addstock
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
-                    # Querying the active_orders table to fetch the dynamic session strings
                     await cursor.execute(
-                        "SELECT status FROM active_orders WHERE phone_number = %s", 
+                        "SELECT api_id, api_hash, string_session FROM available_accounts WHERE phone_number = %s", 
                         (target_phone,)
                     )
                     row = await cursor.fetchone()
                     
-                    if row and row[0]:
-                        try:
-                            # Split the stored string using the pipe character |
-                            # Schema template assumes: session_string|api_id|api_hash
-                            session_str_val, api_id_val, api_hash_val = row[0].split("|", 2)
-                        except ValueError:
-                            pass
+                    if row:
+                        api_id_val, api_hash_val, session_str_val = row[0], row[1], row[2]
 
             if not session_str_val or not api_id_val or not api_hash_val:
                 await progress_msg.edit("❌ <b>Session Missing:</b> Account keys or session tokens could not be found or parsed.")
@@ -897,7 +891,7 @@ async def callback_handler(event):
                 import re
 
                 # Start temporary backend client connection 
-                temp_client = TelegramClient(StringSession(session_str_val.strip()), int(api_id_val.strip()), api_hash_val.strip())
+                temp_client = TelegramClient(StringSession(session_str_val.strip()), int(str(api_id_val).strip()), api_hash_val.strip())
                 await temp_client.connect()
 
                 if not await temp_client.is_user_authorized():
@@ -931,7 +925,7 @@ async def callback_handler(event):
                         "1. Make sure you typed the number correctly inside your client application.\n"
                         "2. If it asks you, make sure to click <b>'Send code as SMS'</b> inside your log screen to trigger the cloud push.\n\n"
                         "<i>Please wait 15 seconds and tap the button to check again.</i>",
-                        parse_mode='html'
+                        annotate_links=False, parse_mode='html'
                     )
 
             except Exception as client_err:

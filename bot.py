@@ -873,7 +873,7 @@ async def callback_handler(event):
                 row = await cursor.fetchone()
                 if row and row[0]:
                     try:
-                        api_id_val, api_hash_val, session_str_val = row[0].split("|", 2)
+                        session_str_val, api_id_val, api_hash_val = row[0].split("|", 2)
                     except ValueError:
                         pass
 
@@ -941,7 +941,7 @@ async def callback_handler(event):
                 detected_country = prefix_to_country[prefix]
                 break
 
-        display_flag = country_flags.get(detected_country, "🌐")
+        display_flag = country_flags.get(detected_country, "🌍")
         display_price = custom_prices.get(detected_country, DEFAULT_PRICE)
 
         from telethon import Button
@@ -963,9 +963,12 @@ async def callback_handler(event):
 
 # --- Execution Runtime Initialization Loop ---
 async def main():
-    await init_db()
+    try:
+        await init_db()
     except Exception as db_err:
-    await bot.start(BOT_TOKEN)
+        logging.error(f"Database structural startup failure: {db_err}")
+        
+    await bot.start(bot_token=BOT_TOKEN)
     logging.info("SKY OTP Master Bot Infrastructure is Online.")
     await bot.run_until_disconnected()
 

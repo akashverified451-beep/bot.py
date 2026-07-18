@@ -862,6 +862,8 @@ async def callback_handler(event):
                 await event.answer("❌ Invalid callback token payload schema.", alert=True)
                 return
             target_phone = _target_phone[1].strip()
+            if not target_phone.startswith("+"):
+                target_phone = "+" + target_phone
 
             await event.answer("📡 Connecting to account session mailbox...", alert=False)
             progress_msg = await event.respond("🔍 <i>Scanning internal Telegram (777000) notification logs...</i>", parse_mode='html')

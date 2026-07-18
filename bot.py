@@ -950,19 +950,11 @@ async def callback_handler(event):
             f"📩 **OTP:** **`{fetched_otp}`**\n\n"
             f"⚠️ **Note:** The Re-Request button is active for 24 hours. "
             f"After that, you'll need to request a new number."
-        
-        for country_name, stock_qty in inventory.items():
-            flag = country_flags.get(country_name, "🏳️")
-            price = custom_prices.get(country_name, DEFAULT_PRICE)
-            callback_payload = f"buy_tg_{country_name}"
-            
-            tg_services_kb.append([
-                Button.inline(f"{flag} {country_name}", data=callback_payload),
-                Button.inline(f"₹{price:.1f}", data=callback_payload),
-                Button.inline(f"[{stock_qty}] ✅", data=callback_payload)
-            ])
-
-        await event.respond("📊 **Available Telegram Services**", buttons=tg_services_kb)
+        )
+  
+            from telethon import Button
+            recheck_kb = [[Button.inline("🔄 Re-Check OTP", data=f"checkotp:{target_phone}")]]
+            await event.edit(custom_otp_message, buttons=recheck_kb)
 
     except Exception as e:
         import logging
@@ -972,22 +964,7 @@ async def callback_handler(event):
 # --- Execution Runtime Initialization Loop ---
 async def main():
     await init_db()
-    try:
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("""
-                    DO $$ 
-                    BEGIN 
-                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                                       WHERE table_name='claims' AND column_name='status') THEN
-                            ALTER TABLE claims ADD COLUMN status TEXT DEFAULT 'PENDING';
-                        END IF;
-                    END $$;
-                """)
-                await conn.commit()
     except Exception as db_err:
-        print(f"Migration note: {db_err}")
-
     await bot.start(BOT_TOKEN)
     logging.info("SKY OTP Master Bot Infrastructure is Online.")
     await bot.run_until_disconnected()

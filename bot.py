@@ -130,12 +130,18 @@ async def global_message_handler(event):
             return
 
         try:
-            # FIX: We split by comma directly and strip the trailing/leading whitespace from each part individually
-            raw_args = text.replace("/addstock", "").strip()
-            args_list = [arg.strip() for arg in raw_args.split(",")]
+            raw_content = text.replace("/addstock", "").strip()
+            raw_parts = raw_content.split(",")
+            
+            # This completely removes hidden line breaks and mobile spaces
+            args_list = []
+            for item in raw_parts:
+                cleaned_item = item.strip().replace("\n", "").replace("\r", "").replace(" ", "")
+                if cleaned_item:
+                    args_list.append(cleaned_item)
 
             if len(args_list) < 4:
-                await event.respond("❌ **Error:** Insufficient arguments provided. You need at least 4 items separated by commas.")
+                await event.respond(f"❌ **Error:** Insufficient parameters found. Detected {len(args_list)} parts out of 4 required.")
                 event.handled = True
                 return
 

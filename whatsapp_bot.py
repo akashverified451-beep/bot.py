@@ -140,6 +140,11 @@ async def buy_whatsapp_account_handler(event):
             await cursor.execute("INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)", (phone, uid, "WAPPFLY_ACTIVE"))
             await conn.commit()
         await conn.close()
+        admin_alert_text = f"💰 **WhatsApp Stock Sold Alert!**\n\n📞 **Number:** `{phone}`\n🌍 **Country:** {country_name}\n👤 **Buyer UID:** `{uid}`\n💵 **Price:** ₹{display_price:.2f}"
+        try:
+            await wa_bot.send_message(int(ADMIN_TELEGRAM_ID), admin_alert_text)
+        except Exception:
+            pass
 
         recheck_kb = [[Button.inline("🔄 Get WhatsApp OTP", data=f"check_wa_otp:{phone}")]]
         await event.edit(f"🎉 **WhatsApp Number Reserved!**\n\n📞 **Phone:** `{phone}`\n🌍 **Country:** {country_name}\n\nRequest your SMS code inside your official WhatsApp mobile app, then click the button below to fetch your OTP instantly!", buttons=recheck_kb)

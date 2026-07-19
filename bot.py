@@ -491,12 +491,6 @@ async def global_message_handler(event):
             event.handled = True
             return
 
-    # # 6. Handle Buy Whatsapp OTP Button
-    if text == "🛍 Buy Whatsapp OTP":
-        await event.respond("<b>Live Whatsapp OTP Service...</b>")
-        event.handled = True
-        return
-
     # # 7. Handle Promocode Button
     elif text == "🎟️ Promocode" or "Promocode" in text:
         try:

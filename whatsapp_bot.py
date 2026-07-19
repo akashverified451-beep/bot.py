@@ -18,7 +18,7 @@ API_HASH = str("27d91aac298b61038f19ee5c1b1f3f48").strip()
 ADMIN_TELEGRAM_ID = int(8393210427)
 
 # Boot up the clean bot instance
-wa_bot = TelegramClient('whatsapp_worker_runtime', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+wa_bot = TelegramClient('unique_whatsapp_session_file', API_ID, API_HASH)
 
 async def get_db_connection():
     """Establishes an isolated asynchronous connection bridge using Psycopg 3."""

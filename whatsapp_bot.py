@@ -18,6 +18,76 @@ ADMIN_TELEGRAM_ID = int(os.environ.get("ADMIN_TELEGRAM_ID", 0))
 # Boot up the client instance for your WhatsApp worker
 wa_bot = TelegramClient('whatsapp_worker_runtime', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
+# -------------------------------------------------------------
+# 🟢 1. Handle Buy Whatsapp OTP Main Menu Button Click
+# -------------------------------------------------------------
+@wa_bot.on(events.NewMessage(pattern=r"(?i)/?Buy Whatsapp OTP.*"))
+async def whatsapp_storefront_menu_handler(event):
+    uid = event.sender_id
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. Fetch live stock counts grouped by country name
+        cursor.execute(
+            "SELECT country_name, COUNT(*) FROM whatsapp_stock GROUP BY country_name"
+        )
+        stock_rows = cursor.fetchall()
+        inventory = {row[0]: row[1] for row in stock_rows}
+        
+        # 2. Fetch custom price adjustments (Fall back to default if table missing)
+        custom_prices = {}
+        try:
+            cursor.execute("SELECT country, price FROM country_prices")
+            price_rows = cursor.fetchall()
+            custom_prices = {row[0]: row[1] for row in price_rows}
+        except Exception:
+            pass
+            
+        cursor.close()
+        conn.close()
+
+        DEFAULT_PRICE = custom_prices.get("DEFAULT", 55.00)
+        
+        country_flags = {
+            "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
+            "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹", "Togo": "🇹🇬", "Pakistan": "🇵🇰"
+        }
+
+        # 3. Create the Grid Header Row
+        wa_services_kb = [
+            [
+                Button.inline("🌍 Country", data="lbl"),
+                Button.inline("💵 Price", data="lbl"),
+                Button.inline("📦 Stock", data="lbl")
+            ]
+        ]
+
+        # 4. Generate Dynamic Grid Rows exactly like your Telegram menu
+        for country_name, stock_qty in inventory.items():
+            if stock_qty > 0:
+                flag = country_flags.get(country_name, "🌐")
+                price = custom_prices.get(country_name, DEFAULT_PRICE)
+                
+                # Truncate callback payloads heavily to stay safely under 64 bytes
+                callback_payload = f"buy_wa_{country_name.lower().replace(' ', '')[:15]}"
+                
+                country_row = [
+                    Button.inline(f"{flag} {country_name}", data=callback_payload),
+                    Button.inline(f"₹{price:.1f}", data=callback_payload),
+                    Button.inline(f"[{stock_qty}] ✅", data=callback_payload)
+                ]
+                wa_services_kb.append(country_row)
+
+        # 5. Output the finished grid menu directly to the user screen
+        await event.respond("🟢 **Available WhatsApp Services**", buttons=wa_services_kb)
+
+    except Exception as e:
+        import logging
+        logging.error(f"Critical crash inside WhatsApp storefront builder: {e}")
+        await event.respond("❌ An error occurred while generating the WhatsApp store list.")
+
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 

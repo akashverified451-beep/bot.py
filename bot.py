@@ -264,6 +264,36 @@ async def global_message_handler(event):
         event.handled = True
         return
 
+    # Admin WhatsApp Inventory Injector Command
+    if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):
+        try:
+            command_args = text.split(" ", 1)[1]
+            phone, country, inst_id, token = [item.strip() for item in command_args.split(",")]
+
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    # 🟢 THIS FORCE-CREATES YOUR TABLE REMOTELY!
+                    await cursor.execute(
+                        "CREATE TABLE IF NOT EXISTS whatsapp_stock ("
+                        "id SERIAL PRIMARY KEY, "
+                        "phone_number TEXT UNIQUE, "
+                        "country_name TEXT, "
+                        "download_link TEXT, "
+                        "auth_key TEXT)"
+                    )
+                    await cursor.execute(
+                        "INSERT INTO whatsapp_stock (phone_number, country_name, download_link, auth_key) "
+                        "VALUES (%s, %s, %s, %s) ON CONFLICT (phone_number) DO NOTHING",
+                        (phone, country, inst_id, token)
+                    )
+                    await conn.commit()
+
+        except Exception as e:
+            await event.respond(f"❌ **Database Error:** `{e}`")
+        
+        event.handled = True
+        return
+
     # Admin Stock Session Validator Engine
     if text.startswith("/checkstock") and int(uid) == int(ADMIN_TELEGRAM_ID):
         try:

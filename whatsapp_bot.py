@@ -8,7 +8,7 @@ from telethon import TelegramClient, events, Button
 
 # --- Configuration & Setup ---
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "7861162228:AAG5EER5HzYb6RMKsZ0lgR9KDmQArRR54VU"
+BOT_TOKEN = "8761162220:AAGSEER5HzYb69RK5zOlgR9KDmQArRR54VU"
 DATABASE_URL = "postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db"
 API_ID = int(33033843)
 API_HASH = "27d91aac298b61038f19ee5c1b1f3f48"

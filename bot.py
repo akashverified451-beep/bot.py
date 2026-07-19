@@ -5,7 +5,7 @@ import logging
 import io
 import asyncio
 from datetime import datetime
-import asyncpg
+import psycopg
 import qrcode
 from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
@@ -29,30 +29,22 @@ bot = TelegramClient("session_data/session", API_ID, API_HASH)
 
 async def get_db_connection():
     """Establishes an isolated non-blocking bridge line with the Render PostgreSQL engine."""
-    return await asyncpg.connect(DATABASE_URL)
+    return await psycopg.AsyncConnection.connect(DATABASE_URL)
 
 async def init_db():
-    """Create required tables asynchronously if they don't exist in PostgreSQL."""
-    conn = await get_db_connection()
-    try:
-        await conn.execute("CREATE TABLE IF NOT EXISTS users (uid BIGINT PRIMARY KEY, balance REAL DEFAULT 0.0)")
-        await conn.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid BIGINT, amount REAL)")
-        await conn.execute("CREATE TABLE IF NOT EXISTS active_orders (phone_number TEXT, uid BIGINT, status TEXT)")
-        await conn.execute("CREATE TABLE IF NOT EXISTS available_accounts (phone_number TEXT PRIMARY KEY, api_id INT, api_hash TEXT, string_session TEXT)")
-        await conn.execute("CREATE TABLE IF NOT EXISTS country_prices (country TEXT PRIMARY KEY, price REAL)")
-        await conn.execute(
-            "CREATE TABLE IF NOT EXISTS whatsapp_stock ("
-            "id SERIAL PRIMARY KEY, "
-            "phone_number TEXT UNIQUE, "
-            "country_name TEXT, "
-            "download_link TEXT, "
-            "auth_key TEXT)"
-        )
-        logging.info("PostgreSQL structural database tables checked/created successfully.")
-    except Exception as e:
-        logging.error(f"Error initializing database: {e}")
-    finally:
-        await conn.close()
+"""Create required tables asynchronously if they don't exist in PostgreSQL."""
+try:
+async with await get_db_connection() as conn:
+async with conn.cursor() as cursor:
+await cursor.execute("CREATE TABLE IF NOT EXISTS users (uid BIGINT PRIMARY KEY, balance INT DEFAULT 0, join_date TEXT)")
+await cursor.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid BIGINT, txn TEXT, session_amt INT DEFAULT 0)")
+await cursor.execute("CREATE TABLE IF NOT EXISTS active_orders (phone_number TEXT, uid BIGINT, status TEXT)")
+await cursor.execute("CREATE TABLE IF NOT EXISTS available_accounts (phone_number TEXT PRIMARY KEY, api_id TEXT, api_hash TEXT, string_session TEXT)")
+await cursor.execute("CREATE TABLE IF NOT EXISTS country_prices (country TEXT PRIMARY KEY, price NUMERIC)")
+await conn.commit()
+logging.info("PostgreSQL structural database tables checked/created successfully.")
+except Exception as e:
+logging.error(f"Error initializing database: {e}")
 
 async def get_country_prices():
     """Fetches real-time custom pricing from the database with hardcoded defaults as fallbacks."""

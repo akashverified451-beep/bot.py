@@ -9,11 +9,11 @@ from telethon import TelegramClient, events, Button
 logging.basicConfig(level=logging.INFO)
 
 # Core Configuration Profiles
-BOT_TOKEN = os.environ.get("8761162220:AAGSEER5HzYb69RK5zOlgR9KDmQArRR54VU")
-DATABASE_URL = os.environ.get("postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db")
-API_ID = int(os.environ.get("33033843", 0))
-API_HASH = os.environ.get("27d91aac298b61038f19ee5c1b1f3f48", "")
-ADMIN_TELEGRAM_ID = int(os.environ.get("8393210427", 0))
+BOT_TOKEN = "7861162228:AAG5EER5HzYb6RMKsZ0lgR9KDmQArRR54VU"
+DATABASE_URL = "postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db"
+API_ID = 23033043
+API_HASH = "27d91aac298b61038f19ee5c1b1f3f48"
+ADMIN_TELEGRAM_ID = 6393210427
 
 wa_bot = TelegramClient('whatsapp_worker_runtime', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 

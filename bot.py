@@ -5,7 +5,7 @@ import logging
 import io
 import asyncio
 from datetime import datetime
-import psycopg
+import psycopg2
 import qrcode
 from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession

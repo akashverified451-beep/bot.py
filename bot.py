@@ -5,7 +5,7 @@ import logging
 import io
 import asyncio
 from datetime import datetime
-import psycopg2
+import asyncpg
 import qrcode
 from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
@@ -29,7 +29,7 @@ bot = TelegramClient("session_data/session", API_ID, API_HASH)
 
 async def get_db_connection():
     """Establishes an isolated non-blocking bridge line with the Render PostgreSQL engine."""
-    return await psycopg2.AsyncConnection.connect(DATABASE_URL)
+    return await asyncpg.AsyncConnection.connect(DATABASE_URL)
 
 async def init_db():
     """Create required tables asynchronously if they don't exist in PostgreSQL."""

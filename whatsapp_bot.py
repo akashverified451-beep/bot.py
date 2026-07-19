@@ -18,7 +18,7 @@ async def get_db_connection():
     return await psycopg.AsyncConnection.connect(DATABASE_URL)
 
 # --- 1. WhatsApp Storefront Menu ---
-@wa_bot.on(events.NewMessage(pattern=r"(?i)/?Buy Whatsapp OTP.*"))
+@wa_bot.on(events.NewMessage(pattern=r"(?i).*Buy Whatsapp OTP.*"))
 async def whatsapp_storefront_menu_handler(event):
     # Generates a menu of available countries and prices from the DB
     try:

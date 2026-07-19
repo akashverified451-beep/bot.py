@@ -30,23 +30,17 @@ async def update_whatsapp_pricing_handler(event):
     uid = event.sender_id
     text = event.text
     
-    # Restrict execution permissions solely to the registered Admin ID profile
     if int(uid) != int(ADMIN_TELEGRAM_ID):
         return
 
     try:
-        # Expected text format: /updateprice_wa Country,Price
         command_body = event.pattern_match.group(1).strip()
         country, price_str = [item.strip() for item in command_body.split(",")]
         new_price = float(price_str)
 
         conn = await get_db_connection()
         async with conn.cursor() as cursor:
-            # Check or instantiate table profiles to avoid drop failures
-            await cursor.execute(
-                "CREATE TABLE IF NOT EXISTS country_prices (country TEXT PRIMARY KEY, price REAL)"
-            )
-            # Insert or overwrite pricing states using Psycopg 3's native numbered placeholders ($1, $2)
+            await cursor.execute("CREATE TABLE IF NOT EXISTS country_prices (country TEXT PRIMARY KEY, price REAL)")
             await cursor.execute(
                 "INSERT INTO country_prices (country, price) VALUES ($1, $2) "
                 "ON CONFLICT (country) DO UPDATE SET price = EXCLUDED.price",

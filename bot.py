@@ -263,16 +263,17 @@ async def global_message_handler(event):
         
         event.handled = True
         return
-
+   
     # Admin WhatsApp Inventory Injector Command
     if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):
         try:
+            # Expected text format: /addwa Phone,Country
             command_args = text.split(" ", 1)[1]
-            phone, country, inst_id, token = [item.strip() for item in command_args.split(",")]
+            phone, country = [item.strip() for item in command_args.split(",")]
 
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
-                    # 🟢 THIS FORCE-CREATES YOUR TABLE REMOTELY!
+                    # Automatically creating table fields if dropped by free tier resets
                     await cursor.execute(
                         "CREATE TABLE IF NOT EXISTS whatsapp_stock ("
                         "id SERIAL PRIMARY KEY, "
@@ -281,15 +282,18 @@ async def global_message_handler(event):
                         "download_link TEXT, "
                         "auth_key TEXT)"
                     )
+                    
+                    # Inserting clean values while using simple default text for unused fields
                     await cursor.execute(
                         "INSERT INTO whatsapp_stock (phone_number, country_name, download_link, auth_key) "
                         "VALUES (%s, %s, %s, %s) ON CONFLICT (phone_number) DO NOTHING",
-                        (phone, country, inst_id, token)
+                        (phone, country, "WAPPFLY_SYSTEM_SLOT", "WAPPFLY_SYSTEM_SLOT")
                     )
                     await conn.commit()
 
+            await event.respond(f"🟢 **WhatsApp Stock Registered!**\n\n📞 **Number:** `{phone}`\n🌍 **Country:** {country}\n📦 Inventory slot updated cleanly.")
         except Exception as e:
-            await event.respond(f"❌ **Database Error:** `{e}`")
+            await event.respond("❌ **Format Mistake!** Use exactly:\n`/addwa Phone,Country`\n\nExample:\n`/addwa +19342478524,United States`")
         
         event.handled = True
         return

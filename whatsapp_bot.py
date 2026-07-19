@@ -3,20 +3,23 @@ import re
 import asyncio
 import logging
 import aiohttp
-import asyncpg
+import psycopg
 from telethon import TelegramClient, events, Button
 
 logging.basicConfig(level=logging.INFO)
 
-# Core Configurations (Render will pass these into both workers)
+# Core Configuration Profiles
 BOT_TOKEN = os.environ.get("8761162220:AAGSEER5HzYb69RK5zOlgR9KDmQArRR54VU")
 DATABASE_URL = os.environ.get("postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db")
 API_ID = int(os.environ.get("33033843", 0))
 API_HASH = os.environ.get("27d91aac298b61038f19ee5c1b1f3f48", "")
 ADMIN_TELEGRAM_ID = int(os.environ.get("8393210427", 0))
 
-# Boot up the client instance for your WhatsApp worker
 wa_bot = TelegramClient('whatsapp_worker_runtime', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+
+async def get_db_connection():
+    """Establishes an isolated asynchronous connection bridge using Psycopg 3."""
+    return await psycopg.AsyncConnection.connect(DATABASE_URL)
 
 # -------------------------------------------------------------
 # 🟢 1. Handle Buy Whatsapp OTP Main Menu Button Click
@@ -26,27 +29,23 @@ async def whatsapp_storefront_menu_handler(event):
     uid = event.sender_id
     
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 1. Fetch live stock counts grouped by country name
-        cursor.execute(
-            "SELECT country_name, COUNT(*) FROM whatsapp_stock GROUP BY country_name"
-        )
-        stock_rows = cursor.fetchall()
-        inventory = {row[0]: row[1] for row in stock_rows}
-        
-        # 2. Fetch custom price adjustments (Fall back to default if table missing)
-        custom_prices = {}
-        try:
-            cursor.execute("SELECT country, price FROM country_prices")
-            price_rows = cursor.fetchall()
-            custom_prices = {row[0]: row[1] for row in price_rows}
-        except Exception:
-            pass
+        conn = await get_db_connection()
+        async with conn.cursor() as cursor:
+            # 1. Fetch live stock counts grouped by country name
+            await cursor.execute("SELECT country_name, COUNT(*) FROM whatsapp_stock GROUP BY country_name")
+            stock_rows = await cursor.fetchall()
+            inventory = {row[0]: row[1] for row in stock_rows}
             
-        cursor.close()
-        conn.close()
+            # 2. Fetch custom price adjustments
+            custom_prices = {}
+            try:
+                await cursor.execute("SELECT country, price FROM country_prices")
+                price_rows = await cursor.fetchall()
+                custom_prices = {row[0]: row[1] for row in price_rows}
+            except Exception:
+                pass
+
+        await conn.close()
 
         DEFAULT_PRICE = custom_prices.get("DEFAULT", 55.00)
         
@@ -69,8 +68,6 @@ async def whatsapp_storefront_menu_handler(event):
             if stock_qty > 0:
                 flag = country_flags.get(country_name, "🌐")
                 price = custom_prices.get(country_name, DEFAULT_PRICE)
-                
-                # Truncate callback payloads heavily to stay safely under 64 bytes
                 callback_payload = f"buy_wa_{country_name.lower().replace(' ', '')[:15]}"
                 
                 country_row = [
@@ -80,89 +77,64 @@ async def whatsapp_storefront_menu_handler(event):
                 ]
                 wa_services_kb.append(country_row)
 
-        # 5. Output the finished grid menu directly to the user screen
         await event.respond("🟢 **Available WhatsApp Services**", buttons=wa_services_kb)
 
     except Exception as e:
-        import logging
         logging.error(f"Critical crash inside WhatsApp storefront builder: {e}")
         await event.respond("❌ An error occurred while generating the WhatsApp store list.")
 
-def get_db_connection():
-    return asyncpg.connect(DATABASE_URL)
-
 # -------------------------------------------------------------
-# 🟢 1. EXTRA WHATSAPP COMMANDS & LAYOUTS GO HERE!
-# -------------------------------------------------------------
-@wa_bot.on(events.NewMessage(pattern='/wasettings'))
-async def wa_custom_settings_handler(event):
-    uid = event.sender_id
-    if int(uid) == int(ADMIN_TELEGRAM_ID):
-        # You can style this menu keyboard however you want!
-        wa_settings_kb = [
-            [Button.inline("🔧 Change Keyboard Style", data="wa_style_change")],
-            [Button.inline("📈 Boost WhatsApp Prices", data="wa_price_boost")]
-        ]
-        await event.respond("⚙️ **WhatsApp Custom Admin Panel**\nModify your layouts directly below:", buttons=wa_settings_kb)
-
-# -------------------------------------------------------------
-# 🟢 2. THE CUSTOM BUTTON INTERACTION HANDLERS GO HERE!
+# 🟢 2. Custom Button Interaction Handlers
 # -------------------------------------------------------------
 @wa_bot.on(events.CallbackQuery(pattern=r"^buy_wa_"))
 async def buy_whatsapp_account_handler(event):
-    # This completely handles the purchase step when a user clicks a WhatsApp country button!
     target_slug = event.data.decode('utf-8').replace("buy_wa_", "").strip()
     uid = event.sender_id
     
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 1. Fetch available stock matching selection criteria
-        cursor.execute(
-            "SELECT phone_number, download_link, auth_key, country_name "
-            "FROM whatsapp_stock WHERE LOWER(country_name) LIKE %s LIMIT 1",
-            (f"%{target_slug}%",)
-        )
-        selected_wa = cursor.fetchone()
+        conn = await get_db_connection()
+        async with conn.cursor() as cursor:
+            # 1. Fetch available stock matching selection criteria
+            await cursor.execute(
+                "SELECT phone_number, download_link, auth_key, country_name "
+                "FROM whatsapp_stock WHERE LOWER(country_name) LIKE %s LIMIT 1",
+                (f"%{target_slug}%",)
+            )
+            selected_wa = await cursor.fetchone()
 
-        if not selected_wa:
-            await event.respond("⚠️ **Out of Stock!** No available numbers match your requested country.")
-            cursor.close()
-            conn.close()
-            return
+            if not selected_wa:
+                await event.respond("⚠️ **Out of Stock!** No available numbers match your requested country.")
+                await conn.close()
+                return
 
-        phone, inst_id, api_token, country_name = selected_wa
-        display_price = 55.00 # Set your default custom WhatsApp price here!
+            phone, inst_id, api_token, country_name = selected_wa
+            display_price = 55.00
 
-        # 2. Verify user financial capability balance
-        cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
-        bal_row = cursor.fetchone()
-        user_bal = bal_row[0] if (bal_row and bal_row[0] is not None) else 0
+            # 2. Verify user financial balance viability
+            await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
+            bal_row = await cursor.fetchone()
+            user_bal = bal_row[0] if (bal_row and bal_row[0] is not None) else 0
 
-        if user_bal < display_price:
-            await event.respond(f"❌ **Insufficient Funds!**\nThis costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.")
-            cursor.close()
-            conn.close()
-            return
+            if user_bal < display_price:
+                await event.respond(f"❌ **Insufficient Funds!**\nThis costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.")
+                await conn.close()
+                return
 
-        # 3. Process transaction states atomically
-        cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
-        cursor.execute("DELETE FROM whatsapp_stock WHERE phone_number = %s", (phone,))
-        
-        # Pack your Green-API tokens seamlessly inside the active order record configuration
-        bundled_wa_meta = f"{inst_id}|{api_token}"
-        cursor.execute(
-            "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
-            (phone, uid, bundled_wa_meta)
-        )
-        conn.commit()
-        cursor.close()
-        conn.close()
+            # 3. Process transaction states atomically
+            await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
+            await cursor.execute("DELETE FROM whatsapp_stock WHERE phone_number = %s", (phone,))
+            
+            bundled_wa_meta = f"{inst_id}|{api_token}"
+            await cursor.execute(
+                "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
+                (phone, uid, bundled_wa_meta)
+            )
+            await conn.commit()
+
+        await conn.close()
 
         # 4. Output successful receipt directly to customer dashboard
         recheck_kb = [[Button.inline("🔄 Get WhatsApp OTP", data=f"check_wa_otp:{phone}")]]
-        
         success_delivery = (
             f"🎉 **WhatsApp Number Reserved Successfully!**\n\n"
             f"📞 **Phone Number:** `{phone}`\n"
@@ -177,7 +149,7 @@ async def buy_whatsapp_account_handler(event):
         await event.respond("❌ An error occurred while processing your storefront selection request.")
 
 # -------------------------------------------------------------
-# 🟢 3. THE LIVE OTP LOOKUP LOGIC GOES HERE!
+# 🟢 3. The Live OTP Lookup Logic
 # -------------------------------------------------------------
 @wa_bot.on(events.CallbackQuery(pattern=r"^check_wa_otp:"))
 async def instant_whatsapp_otp_fetcher(event):
@@ -189,14 +161,13 @@ async def instant_whatsapp_otp_fetcher(event):
     instance_id = None
     api_token = None
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", (target_phone, uid))
-    row = cursor.fetchone()
-    if row and row[0]:
-        instance_id, api_token = row[0].split("|", 1)
-    cursor.close()
-    conn.close()
+    conn = await get_db_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute("SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", (target_phone, uid))
+        row = await cursor.fetchone()
+        if row and row[0]:
+            instance_id, api_token = row[0].split("|", 1)
+    await conn.close()
 
     fetched_otp = "⏳ NO WHATSAPP SMS FOUND YET"
 

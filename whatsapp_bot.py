@@ -3,7 +3,7 @@ import re
 import asyncio
 import logging
 import aiohttp
-import psycopg2
+import asyncpg
 from telethon import TelegramClient, events, Button
 
 logging.basicConfig(level=logging.INFO)
@@ -89,7 +89,7 @@ async def whatsapp_storefront_menu_handler(event):
         await event.respond("❌ An error occurred while generating the WhatsApp store list.")
 
 def get_db_connection():
-    return psycopg2.connect(DATABASE_URL)
+    return asyncpg.connect(DATABASE_URL)
 
 # -------------------------------------------------------------
 # 🟢 1. EXTRA WHATSAPP COMMANDS & LAYOUTS GO HERE!

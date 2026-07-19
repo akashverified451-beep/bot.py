@@ -76,7 +76,10 @@ async def buy_whatsapp_account_handler(event):
     try:
         conn = await get_db_connection()
         async with conn.cursor() as cursor:
-            await cursor.execute("SELECT phone_number, download_link, auth_key, country_name FROM whatsapp_stock WHERE LOWER(country_name) LIKE %s LIMIT 1", (f"%{target_slug}%",))
+            await cursor.execute(
+                "SELECT phone_number, download_link, auth_key, country_name "
+                "FROM whatsapp_stock WHERE LOWER(REPLACE(country_name, ' ', '')) LIKE %s LIMIT 1",
+                (f"%{target_slug}%",)
             selected_wa = await cursor.fetchone()
 
             if not selected_wa:

@@ -8,15 +8,16 @@ from telethon import TelegramClient, events, Button
 
 logging.basicConfig(level=logging.INFO)
 
-# Core Configuration Profiles
-BOT_TOKEN = "7861162228:AAG5EER5HzYb6RMKsZ0lgR9KDmQArRR54VU"
+# Master Application Credentials
+BOT_TOKEN = "8761162220:AAGSEER5HzYb69RK5zOlgR9KDmQArRR54VU"
 DATABASE_URL = "postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db"
 
-# Explicitly forcing strict numeric integer and string types to prevent Telegram RPC validation rejections
+# Explicitly forcing strict unquoted numeric integers and strings to satisfy Telegram RPC validators
 API_ID = int(33033843)
 API_HASH = str("27d91aac298b61038f19ee5c1b1f3f48").strip()
 ADMIN_TELEGRAM_ID = int(8393210427)
 
+# Boot up the clean bot instance
 wa_bot = TelegramClient('whatsapp_worker_runtime', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 async def get_db_connection():

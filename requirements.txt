@@ -4,4 +4,4 @@ pyrogram
 tgcrypto
 qrcode
 pillow
-psycopg[binary]
+psycopg2-binary

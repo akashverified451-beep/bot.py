@@ -6,139 +6,158 @@ import aiohttp
 import psycopg
 from telethon import TelegramClient, events, Button
 
-# --- Configuration & Setup ---
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8761162220:AAGSEER5HzYb69RK5zOlgR9KDmQArRR54VU"
+
+# Master Service Configurations (Zero environment settings required on Render dashboard!)
+WAPPFLY_API_KEY = "dc41e6701f1426233f610751fbe08413846d04491283fc6c0c9171dda75fc2a2"
 DATABASE_URL = "postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db"
 API_ID = int(33033843)
-API_HASH = "27d91aac298b61038f19ee5c1b1f3f48"
+API_HASH = str("27d91aac298b61038f19ee5c1b1f3f48").strip()
+ADMIN_TELEGRAM_ID = int(8393210427)
+
 wa_bot = TelegramClient('unique_whatsapp_session_file', API_ID, API_HASH)
 
 async def get_db_connection():
+    """Establishes an isolated asynchronous connection bridge using Psycopg 3."""
     return await psycopg.AsyncConnection.connect(DATABASE_URL)
 
-# --- 1. WhatsApp Storefront Menu ---
+# -------------------------------------------------------------
+# 🟢 1. Handle Buy Whatsapp OTP Main Menu Button Click
+# -------------------------------------------------------------
 @wa_bot.on(events.NewMessage(pattern=r"(?i).*Buy Whatsapp OTP.*"))
 async def whatsapp_storefront_menu_handler(event):
-    # Generates a menu of available countries and prices from the DB
     try:
         conn = await get_db_connection()
         async with conn.cursor() as cursor:
             await cursor.execute("SELECT country_name, COUNT(*) FROM whatsapp_stock GROUP BY country_name")
-            inventory = {row[0]: row[1] for row in await cursor.fetchall()}
+            stock_rows = await cursor.fetchall()
+            inventory = {row[0]: row[1] for row in stock_rows}
             
-            # Simplified for brevity; full logic for price retrieval is in the original script
-            await cursor.execute("SELECT country, price FROM country_prices")
-            custom_prices = {row[0]: row[1] for row in await cursor.fetchall()}
+            custom_prices = {}
+            try:
+                await cursor.execute("SELECT country, price FROM country_prices")
+                price_rows = await cursor.fetchall()
+                custom_prices = {row[0]: row[1] for row in price_rows}
+            except Exception:
+                pass
         await conn.close()
 
+        DEFAULT_PRICE = custom_prices.get("DEFAULT", 55.00)
+        country_flags = {"Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦", "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"}
+
         wa_services_kb = [[Button.inline("🌍 Country", data="lbl"), Button.inline("💵 Price", data="lbl"), Button.inline("📦 Stock", data="lbl")]]
-        
+
         for country_name, stock_qty in inventory.items():
             if stock_qty > 0:
-                price = custom_prices.get(country_name, 55.0)
+                flag = country_flags.get(country_name, "🌐")
+                price = custom_prices.get(country_name, DEFAULT_PRICE)
                 callback_payload = f"buy_wa_{country_name.lower().replace(' ', '')[:15]}"
+                
                 wa_services_kb.append([
-                    Button.inline(f"🌐 {country_name}", data=callback_payload),
+                    Button.inline(f"{flag} {country_name}", data=callback_payload),
                     Button.inline(f"₹{price:.1f}", data=callback_payload),
                     Button.inline(f"[{stock_qty}] ✅", data=callback_payload)
                 ])
+
         await event.respond("🟢 **Available WhatsApp Services**", buttons=wa_services_kb)
     except Exception as e:
-        logging.error(f"Error building store: {e}")
+        logging.error(f"Storefront layout breakdown exception: {e}")
+        await event.respond("❌ An error occurred while generating the WhatsApp store list.")
 
-# --- 2. Purchase Handler ---
+# -------------------------------------------------------------
+# 🟢 2. Custom Button Interaction Handlers
+# -------------------------------------------------------------
 @wa_bot.on(events.CallbackQuery(pattern=r"^buy_wa_"))
 async def buy_whatsapp_account_handler(event):
-    # Handles purchase logic, updates DB, and sends instructions
-    target_slug = event.data.decode('utf-8').replace("buy_wa_", "")
-    # (Full database transaction logic to handle stock, price, and user balance is in the source file)
-    # ... (skipping long database interaction for brevity)
-    await event.edit("🎉 **WhatsApp Number Reserved Successfully!**\nUse the button below to fetch the code.", 
-                     buttons=[[Button.inline("🔄 Get WhatsApp OTP", data=f"check_wa_otp:number")]])
+    target_slug = event.data.decode('utf-8').replace("buy_wa_", "").strip()
+    uid = event.sender_id
+    
+    try:
+        conn = await get_db_connection()
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT phone_number, download_link, auth_key, country_name FROM whatsapp_stock WHERE LOWER(country_name) LIKE %s LIMIT 1", (f"%{target_slug}%",))
+            selected_wa = await cursor.fetchone()
+
+            if not selected_wa:
+                await event.respond("⚠️ **Out of Stock!** No available numbers match your requested country.")
+                await conn.close()
+                return
+
+            phone, inst_id, api_token, country_name = selected_wa
+            display_price = 55.00
+
+            await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
+            bal_row = await cursor.fetchone()
+            user_bal = bal_row[0] if bal_row else 0
+
+            if user_bal < display_price:
+                await event.respond(f"❌ **Insufficient Funds!**\nThis costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.")
+                await conn.close()
+                return
+
+            await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
+            await cursor.execute("DELETE FROM whatsapp_stock WHERE phone_number = %s", (phone,))
+            await cursor.execute("INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)", (phone, uid, "WAPPFLY_ACTIVE"))
+            await conn.commit()
+        await conn.close()
+
+        recheck_kb = [[Button.inline("🔄 Get WhatsApp OTP", data=f"check_wa_otp:{phone}")]]
+        await event.edit(f"🎉 **WhatsApp Number Reserved!**\n\n📞 **Phone:** `{phone}`\n🌍 **Country:** {country_name}\n\nRequest your SMS code inside your official WhatsApp mobile app, then click the button below to fetch your OTP instantly!", buttons=recheck_kb)
+    except Exception as e:
+        logging.error(f"Checkout block crash: {e}")
+        await event.respond("❌ An error occurred during selection processing.")
+
 # -------------------------------------------------------------
-# 🟢 3. The Live OTP Lookup Logic + Auto-Refund Engine
+# 🟢 3. The Live Wappfly OTP Interceptor + Auto-Refund Engine
 # -------------------------------------------------------------
 @wa_bot.on(events.CallbackQuery(pattern=r"^check_wa_otp:"))
 async def instant_whatsapp_otp_fetcher(event):
     _, target_phone = event.data.decode('utf-8').split(":")
     uid = event.sender_id
     
-    await event.answer("⚡ Streaming live WhatsApp incoming chat logs...", alert=False)
+    await event.answer("⚡ Streaming live Wappfly cloud inbox events...", alert=False)
     
-    instance_id = None
-    api_token = None
-    
-    conn = await get_db_connection()
-    async with conn.cursor() as cursor:
-        await cursor.execute("SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", (target_phone, uid))
-        row = await cursor.fetchone()
-        if row and row:
-            instance_id, api_token = row[0].split("|", 1)
-    await conn.close()
-
     fetched_otp = "⏳ NO WHATSAPP SMS FOUND YET"
-
-    if instance_id and api_token:
-        get_chats_url = f"https://green-api.com{instance_id}/getChatHistory/{api_token}"
-        payload = {"chatId": "5511933007000@c.us", "count": 3}
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                for attempt in range(12): 
-                    async with session.post(get_chats_url, json=payload, timeout=5.0) as response:
-                        if response.status == 200:
-                            messages = await response.json()
-                            for msg in messages:
-                                text_content = msg.get("textMessage", "") or msg.get("extendedTextMessage", {}).get("text", "")
-                                if text_content:
-                                    otp_match = re.search(r'\b\d{3}-\d{3}\b|\b\d{6}\b', text_content)
-                                    if otp_match:
-                                        fetched_otp = otp_match.group(0).replace("-", "")
-                                        break
-                    if fetched_otp != "⏳ NO WHATSAPP SMS FOUND YET":
-                        break
-                    await asyncio.sleep(2.5)
-        except Exception as api_err:
-            logging.error(f"Live WhatsApp connection error: {api_err}")
-
-    # Layout generation variables based on results
-    custom_prices = {}
-    try:
-        conn = await get_db_connection()
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT country, price FROM country_prices")
-            price_rows = await cursor.fetchall()
-            custom_prices = {r[0]: r[1] for r in price_rows}
-        await conn.close()
-    except Exception:
-        pass
     
-    DEFAULT_PRICE = custom_prices.get("DEFAULT", 55.00)
+    # Official Wappfly Developer API chat history read endpoint query URL string
+    wappfly_url = "https://wappfly.com"
+    headers = {"Authorization": f"Bearer {WAPPFLY_API_KEY}"}
+    params = {"chatId": "status@broadcast", "limit": 3}
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            for attempt in range(12): 
+                async with session.get(wappfly_url, headers=headers, params=params, timeout=4.0) as response:
+                    if response.status == 200:
+                        messages_list = await response.json()
+                        for msg in messages_list:
+                            # Pulling body value out of incoming dictionary array payload
+                            text_body = msg.get("body", "")
+                            if text_body:
+                                otp_match = re.search(r'\b\d{3}-\d{3}\b|\b\d{6}\b', text_body)
+                                if otp_match:
+                                    fetched_otp = otp_match.group(0).replace("-", "")
+                                    break
+                if fetched_otp != "⏳ NO WHATSAPP SMS FOUND YET":
+                    break
+                await asyncio.sleep(2.5)
+    except Exception as e:
+        logging.error(f"Wappfly polling connection failure exception: {e}")
 
-    # Keyboard layout settings 
     if fetched_otp == "⏳ NO WHATSAPP SMS FOUND YET":
-        # Account is either slow or offline -> provide a dynamic Cancel / Refund Option!
         recheck_kb = [
             [Button.inline("🔄 Re-Check OTP", data=f"check_wa_otp:{target_phone}")],
             [Button.inline("❌ Cancel & Refund", data=f"refund_wa_order:{target_phone}")]
         ]
-        status_note = "⚠️ **Note:** If you aren't receiving code, click 'Cancel & Refund' to restore balance instantly."
+        status_note = "⚠️ **Note:** If code isn't arriving, click 'Cancel & Refund' to restore balance instantly."
     else:
-        # Code successfully arrived!
         recheck_kb = [[Button.inline("🔄 Re-Check OTP", data=f"check_wa_otp:{target_phone}")]]
         status_note = "✅ Code retrieved successfully!"
 
-    custom_otp_message = (
-        f"🟢 **WhatsApp Live OTP Portal**\n\n"
-        f"📞 **Phone Number:** `{target_phone}`\n"
-        f"📩 **WhatsApp OTP:** **`{fetched_otp}`**\n\n"
-        f"{status_note}"
-    )
-    await event.edit(custom_otp_message, buttons=recheck_kb)
+    await event.edit(f"🟢 **WhatsApp Live OTP Portal**\n\n📞 **Phone:** `{target_phone}`\n📩 **WhatsApp OTP:** **`{fetched_otp}`**\n\n{status_note}", buttons=recheck_kb)
 
 # -------------------------------------------------------------
-# 🟢 4. The Automated Refund Core Request Receiver
+# 🟢 4. The Automated Refund Request Receiver
 # -------------------------------------------------------------
 @wa_bot.on(events.CallbackQuery(pattern=r"^refund_wa_order:"))
 async def refund_whatsapp_order_handler(event):
@@ -148,41 +167,26 @@ async def refund_whatsapp_order_handler(event):
     try:
         conn = await get_db_connection()
         async with conn.cursor() as cursor:
-            # 1. Verify that this order actively exists before initiating refund logic
             await cursor.execute("SELECT phone_number FROM active_orders WHERE phone_number = %s AND uid = %s", (target_phone, uid))
-            order_exists = await cursor.fetchone()
-            
-            if not order_exists:
-                await event.respond("❌ **Error:** This active reservation context was already cleared or refunded.")
+            if not await cursor.fetchone():
+                await event.respond("❌ Order already cleared or processed.")
                 await conn.close()
                 return
             
-            # 2. Extract standard lookup price parameters to credit user wallet profile 
-            # (Recycling simple fixed parameter approach for speed safety)
             refund_amount = 55.00 
-            
-            # 3. Perform atomic processing transaction steps securely
             await cursor.execute("UPDATE users SET balance = balance + %s WHERE uid = %s", (refund_amount, uid))
             await cursor.execute("DELETE FROM active_orders WHERE phone_number = %s AND uid = %s", (target_phone, uid))
             await conn.commit()
-            
         await conn.close()
         
-        # 4. Wipe selection menu items and output clean execution state alert
-        await event.edit(
-            f"🛑 **Order Cancelled Successfully!**\n\n"
-            f"📞 **Phone:** `{target_phone}`\n"
-            f"💰 **Refund Credit:** +₹{refund_amount:.2f}\n\n"
-            f"Your funds have been securely put back into your wallet balance instantly. You may select another number."
-        )
-        
-    except Exception as refund_err:
-        logging.error(f"Refund runtime loop breakdown: {refund_err}")
-        await event.respond("❌ Failed processing wallet balance adjustment remotely.")
+        await event.edit(f"🛑 **Order Cancelled Successfully!**\n\n📞 **Phone:** `{target_phone}`\n💰 **Refund Credit:** +₹{refund_amount:.2f}\n\nYour funds have been securely returned to your wallet balance instantly.")
+    except Exception as e:
+        logging.error(f"Refund runtime error: {e}")
+        await event.respond("❌ Failed processing wallet refund.")
 
-# --- 4. Main Application Loop ---
 async def main():
     await wa_bot.start(bot_token=BOT_TOKEN)
+    logging.info("Free Unlimited Wappfly background service worker daemon is active.")
     await wa_bot.run_until_disconnected()
 
 if __name__ == '__main__':

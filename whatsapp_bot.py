@@ -9,6 +9,7 @@ from telethon import TelegramClient, events, Button
 logging.basicConfig(level=logging.INFO)
 
 # Master Service Configurations (Zero environment settings required on Render dashboard!)
+BOT_TOKEN = "8761162220:AAGSEER5HzYb69RK5zOlgR9KDmQArRR54VU"
 WAPPFLY_API_KEY = "dc41e6701f1426233f610751fbe08413846d04491283fc6c0c9171dda75fc2a2"
 DATABASE_URL = "postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db"
 API_ID = int(33033843)

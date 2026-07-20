@@ -62,6 +62,84 @@ async def update_whatsapp_pricing_handler(event):
         )
 
 # -------------------------------------------------------------
+# 🔔 Admin User Analytics & Live Order Tracker System
+# -------------------------------------------------------------
+
+# 1. Catch New User Sign-ups and Send Live Admin Notification
+@wa_bot.on(events.NewMessage(pattern=r"(?i)/start"))
+async def live_user_join_notifier_handler(event):
+    uid = event.sender_id
+    
+    try:
+        # Check if user already exists in your core central ledger
+        conn = await get_db_connection()
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT uid FROM users WHERE uid = $1", (uid,))
+            user_exists = await cursor.fetchone()
+            
+            # If they are completely new, send a real-time analytics ping to your inbox
+            if not user_exists:
+                sender = await event.get_sender()
+                username = f"@{sender.username}" if sender.username else "No Username"
+                first_name = sender.first_name or "User"
+                
+                join_alert = (
+                    f"👤 **🚀 New User Joined Your Bot!**\n\n"
+                    f"🏷️ **Name:** {first_name}\n"
+                    f"💬 **Username:** {username}\n"
+                    f"🆔 **Telegram UID:** `{uid}`\n"
+                    f"📊 Status: Profile initialized automatically inside PostgreSQL."
+                )
+                try:
+                    await wa_bot.send_message(int(ADMIN_TELEGRAM_ID), join_alert)
+                except Exception:
+                    pass
+        await conn.close()
+    except Exception as e:
+        logging.error(f"Join monitoring loop exception error: {e}")
+
+# 2. Administrative Deep-Dive Command to Audit Active Customer Purchases
+@wa_bot.on(events.NewMessage(pattern=r"^/activeorders$"))
+async def admin_active_orders_lookup_handler(event):
+    uid = event.sender_id
+    
+    # Strictly lock authorization access to prevent configuration visibility leaks
+    if int(uid) != int(ADMIN_TELEGRAM_ID):
+        return
+
+    try:
+        conn = await get_db_connection()
+        async with conn.cursor() as cursor:
+            # Query active transaction records matching your live storefront operations
+            await cursor.execute("SELECT phone_number, uid, status FROM active_orders")
+            active_rows = await cursor.fetchall()
+            
+        await conn.close()
+
+        if not active_rows:
+            await event.respond("📥 **No Active Orders:** There are currently no ongoing WhatsApp account checkout sessions.")
+            return
+
+        report_lines = []
+        for index, row in enumerate(active_rows, 1):
+            phone, customer_uid, order_state = row
+            # Appending a clean structural readout index block for rapid terminal reading
+            report_lines.append(
+                f"🛍️ **Order #{index}**\n"
+                f"📞 **Phone Number:** `{phone}`\n"
+                f"👤 **Customer UID:** `{customer_uid}`\n"
+                f"⚡ **Tracking Tag:** `{order_state}`\n"
+                f"────────────────────"
+            )
+
+        complete_report = "📊 **SKY OTP BOT - LIVE ACTIVE CUSTOMERS REPORT**\n\n" + "\n".join(report_lines)
+        await event.respond(complete_report)
+
+    except Exception as err:
+        logging.error(f"Active tracking audit breakdown: {err}")
+        await event.respond(f"❌ **System Error:** Failed generating data ledger printout: `{err}`")
+
+# -------------------------------------------------------------
 # 🟢 1. Handle Buy Whatsapp OTP Main Menu Button Click
 # -------------------------------------------------------------
 @wa_bot.on(events.NewMessage(pattern=r"(?i).*Buy Whatsapp OTP.*"))

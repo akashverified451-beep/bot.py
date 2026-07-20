@@ -61,23 +61,24 @@ async def update_whatsapp_pricing_handler(event):
             "Example:\n`/updateprice_wa United States,65.00`"
         )
 
-# 🟢 start notifier block completely with this connection event listener:
+# 🟢 live_user_join_notifier_handler completely with this:
 
 @wa_bot.on(events.NewMessage())
 async def live_user_join_notifier_handler(event):
     uid = event.sender_id
     text = event.text or ""
     
-    # Catching when any user fires a start request to the central network pool
+    # Listen to the global message pool for any start commands safely
     if "/start" in text.lower():
         try:
             conn = await get_db_connection()
             async with conn.cursor() as cursor:
-                # Check if this user is a newly registered user profile inside your ledger
+                # Using the correct Psycopg 3 numbered placeholder format ($1)
                 await cursor.execute("SELECT uid FROM users WHERE uid = $1", (uid,))
-                user_exists = await cursor.fetchone()
+                row = await cursor.fetchone()
                 
-                if not user_exists:
+                # If row is empty, this is a completely brand new customer profile!
+                if row is None:
                     sender = await event.get_sender()
                     username = f"@{sender.username}" if sender.username else "No Username"
                     first_name = sender.first_name or "User"
@@ -93,9 +94,11 @@ async def live_user_join_notifier_handler(event):
                         await wa_bot.send_message(int(ADMIN_TELEGRAM_ID), join_alert)
                     except Exception:
                         pass
-            await conn.close()
         except Exception as e:
             logging.error(f"Join monitoring loop exception error: {e}")
+        finally:
+            if 'conn' in locals():
+                await conn.close()
 
 # -------------------------------------------------------------
 # 📊 Administrative Total Registered Customer Count Lookup Command

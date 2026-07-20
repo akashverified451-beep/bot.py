@@ -61,83 +61,56 @@ async def update_whatsapp_pricing_handler(event):
             "Example:\n`/updateprice_wa United States,65.00`"
         )
 
-# -------------------------------------------------------------
-# 🔔 Admin User Analytics & Live Order Tracker System
-# -------------------------------------------------------------
+# 🟢 Replace your entire old /activeorders handler completely with this smart chunking template:
 
-# 1. Catch New User Sign-ups and Send Live Admin Notification
-@wa_bot.on(events.NewMessage(pattern=r"(?i)/start"))
-async def live_user_join_notifier_handler(event):
-    uid = event.sender_id
-    
-    try:
-        # Check if user already exists in your core central ledger
-        conn = await get_db_connection()
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT uid FROM users WHERE uid = $1", (uid,))
-            user_exists = await cursor.fetchone()
-            
-            # If they are completely new, send a real-time analytics ping to your inbox
-            if not user_exists:
-                sender = await event.get_sender()
-                username = f"@{sender.username}" if sender.username else "No Username"
-                first_name = sender.first_name or "User"
-                
-                join_alert = (
-                    f"👤 **🚀 New User Joined Your Bot!**\n\n"
-                    f"🏷️ **Name:** {first_name}\n"
-                    f"💬 **Username:** {username}\n"
-                    f"🆔 **Telegram UID:** `{uid}`\n"
-                    f"📊 Status: Profile initialized automatically inside PostgreSQL."
-                )
-                try:
-                    await wa_bot.send_message(int(ADMIN_TELEGRAM_ID), join_alert)
-                except Exception:
-                    pass
-        await conn.close()
-    except Exception as e:
-        logging.error(f"Join monitoring loop exception error: {e}")
-
-# 2. Administrative Deep-Dive Command to Audit Active Customer Purchases
 @wa_bot.on(events.NewMessage(pattern=r"^/activeorders$"))
 async def admin_active_orders_lookup_handler(event):
     uid = event.sender_id
     
-    # Strictly lock authorization access to prevent configuration visibility leaks
     if int(uid) != int(ADMIN_TELEGRAM_ID):
         return
 
     try:
         conn = await get_db_connection()
         async with conn.cursor() as cursor:
-            # Query active transaction records matching your live storefront operations
             await cursor.execute("SELECT phone_number, uid, status FROM active_orders")
             active_rows = await cursor.fetchall()
-            
         await conn.close()
 
         if not active_rows:
             await event.respond("📥 **No Active Orders:** There are currently no ongoing WhatsApp account checkout sessions.")
             return
 
-        report_lines = []
+        # Send initial header summary first
+        await event.respond(f"📊 **SKY OTP BOT - LIVE ACTIVE CUSTOMERS REPORT**\n🔢 **Total Active Contexts:** `{len(active_rows)}` items found.\nSending full database breakdown ledger stream below...")
+        await asyncio.sleep(0.5)
+
+        current_message_chunk = ""
         for index, row in enumerate(active_rows, 1):
             phone, customer_uid, order_state = row
-            # Appending a clean structural readout index block for rapid terminal reading
-            report_lines.append(
+            block_entry = (
                 f"🛍️ **Order #{index}**\n"
                 f"📞 **Phone Number:** `{phone}`\n"
                 f"👤 **Customer UID:** `{customer_uid}`\n"
                 f"⚡ **Tracking Tag:** `{order_state}`\n"
-                f"────────────────────"
+                f"────────────────────\n"
             )
+            
+            # If the current compiled chunk string approaches Telegram's character safety wall, transmit it instantly
+            if len(current_message_chunk) + len(block_entry) > 3500:
+                await event.respond(current_message_chunk)
+                current_message_chunk = block_entry
+                await asyncio.sleep(0.5) # Anti-flood delay safety lock
+            else:
+                current_message_chunk += block_entry
 
-        complete_report = "📊 **SKY OTP BOT - LIVE ACTIVE CUSTOMERS REPORT**\n\n" + "\n".join(report_lines)
-        await event.respond(complete_report)
+        # Send any remaining entries left in the final loop variable string
+        if current_message_chunk:
+            await event.respond(current_message_chunk)
 
     except Exception as err:
-        logging.error(f"Active tracking audit breakdown: {err}")
-        await event.respond(f"❌ **System Error:** Failed generating data ledger printout: `{err}`")
+        logging.error(f"Active tracking chunking fault: {err}")
+        await event.respond(f"❌ **System Error:** Failed generating data ledger chunk format printout: `{err}`")
 
 # -------------------------------------------------------------
 # 🟢 1. Handle Buy Whatsapp OTP Main Menu Button Click

@@ -74,7 +74,7 @@ async def live_user_join_notifier_handler(event):
             conn = await get_db_connection()
             async with conn.cursor() as cursor:
                 # Using the correct Psycopg 3 numbered placeholder format ($1)
-                await cursor.execute("SELECT uid FROM users WHERE uid = $1", (uid,))
+                await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
                 row = await cursor.fetchone()
                 
                 # If row is empty, this is a completely brand new customer profile!

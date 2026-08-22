@@ -84,12 +84,19 @@ async def update_whatsapp_pricing_handler(event):
         )
 
 # 🟢 live_user_join_notifier_handler completely with this:
-
 @wa_bot.on(events.NewMessage())
 async def live_user_join_notifier_handler(event):
     uid = event.sender_id
     text = event.text or ""
     
+    # 🛑 PROTECTION GUARD: Drop administrative alert logs instantly
+    if "New User Joined" in text or "Stock Sold Alert" in text:
+        return
+        
+    # Ignore messages sent by your own admin account to break echo loops
+    if int(uid) == int(ADMIN_TELEGRAM_ID):
+        return
+
     # Listen to the global message pool for any start commands safely
     if "/start" in text.lower():
         try:

@@ -9,7 +9,7 @@ from telethon import TelegramClient, events, Button
 logging.basicConfig(level=logging.INFO)
 
 # Master Service Configurations (Zero environment settings required on Render dashboard!)
-BOT_TOKEN = "8865661759:AAEdZafGwuj6i5rTqDr8Q3oierIe0mD1tjd"
+BOT_TOKEN = "8865661759:AAEdZafGwuj6i5rTqDr8Q3oierIe0mD1piE"
 WAPPFLY_API_KEY = "dc41e6701f1426233f610751fbe08413846d04491283fc6c0c9171dda75fc2a2"
 DATABASE_URL = "postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db"
 API_ID = int(33033843)
@@ -21,6 +21,28 @@ wa_bot = TelegramClient('unique_whatsapp_session_file', API_ID, API_HASH)
 async def get_db_connection():
     """Establishes an isolated asynchronous connection bridge using Psycopg 3."""
     return await psycopg.AsyncConnection.connect(DATABASE_URL)
+
+async def get_country_prices(service_type="WhatsApp"):
+    """Fetches custom pricing from the shared database filtered by category."""
+    defaults = {
+        "Colombia": 55.00, "Nigeria": 55.00, "Bangladesh": 55.00,
+        "Canada": 55.00, "United States": 55.00, "India": 55.00, "Ethiopia": 55.00,
+        "DEFAULT": 55.00
+    }
+    try:
+        conn = await get_db_connection()
+        async with conn.cursor() as cursor:
+            await cursor.execute(
+                "SELECT country, price FROM country_prices WHERE LOWER(service_type) = LOWER(%s)",
+                (service_type,)
+            )
+            rows = await cursor.fetchall()
+            for country, price in rows:
+                defaults[country.strip()] = float(price)
+        await conn.close()
+    except Exception as e:
+        logging.error(f"Error fetching dynamic WhatsApp prices: {e}")
+    return defaults
 
 # -------------------------------------------------------------
 # 🟢 Admin WhatsApp Custom Price Adjustment Command
@@ -144,13 +166,13 @@ async def whatsapp_storefront_menu_handler(event):
             stock_rows = await cursor.fetchall()
             inventory = {row[0]: row[1] for row in stock_rows}
             
+        # Fetch dynamic custom WhatsApp pricing parameters exclusively 
+        try:
+            custom_prices = await get_country_prices("WhatsApp")
+        except Exception as price_err:
+            logging.error(f"Fallback to internal price values: {price_err}")
             custom_prices = {}
-            try:
-                await cursor.execute("SELECT country, price FROM country_prices")
-                price_rows = await cursor.fetchall()
-                custom_prices = {row[0]: row[1] for row in price_rows}
-            except Exception:
-                pass
+
         await conn.close()
 
         DEFAULT_PRICE = custom_prices.get("DEFAULT", 55.00)
@@ -194,7 +216,13 @@ async def buy_whatsapp_account_handler(event):
                 await conn.close()
                 return
 
-            phone, inst_id, api_token, country_name = selected_wa
+        phone, inst_id, api_token, country_name = selected_wa
+        
+        # Calculate dynamic country pricing parameter lookup matching database entries
+        try:
+            custom_prices = await get_country_prices("WhatsApp")
+            display_price = custom_prices.get(country_name, custom_prices.get("DEFAULT", 55.00))
+        except Exception:
             display_price = 55.00
 
             await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
@@ -283,13 +311,26 @@ async def refund_whatsapp_order_handler(event):
     try:
         conn = await get_db_connection()
         async with conn.cursor() as cursor:
-            await cursor.execute("SELECT phone_number FROM active_orders WHERE phone_number = %s AND uid = %s", (target_phone, uid))
-            if not await cursor.fetchone():
-                await event.respond("❌ Order already cleared or processed.")
-                await conn.close()
-                return
-            
-            refund_amount = 55.00 
+                # Pull both the phone number and the original meta tracking string containing setup details
+                await cursor.execute("SELECT phone_number, status FROM active_orders WHERE phone_number = %s AND uid = %s", (target_phone, uid))
+                order_row = await cursor.fetchone()
+                if not order_row:
+                    await event.respond("❌ Order already cleared or processed.")
+                    await conn.close()
+                    return
+                
+                # Fetch the country name from your central stock table to verify dynamic pricing variables
+                await cursor.execute("SELECT country_name FROM whatsapp_stock WHERE phone_number = %s", (target_phone,))
+                stock_row = await cursor.fetchone()
+                country_name = stock_row[0] if stock_row else "DEFAULT"
+                
+                # Dynamically calculate the matching refund value from the database map matrix
+                try:
+                    custom_prices = await get_country_prices("WhatsApp")
+                    refund_amount = custom_prices.get(country_name, custom_prices.get("DEFAULT", 55.00))
+                except Exception:
+                    refund_amount = 55.00
+
             await cursor.execute("UPDATE users SET balance = balance + %s WHERE uid = %s", (refund_amount, uid))
             await cursor.execute("DELETE FROM active_orders WHERE phone_number = %s AND uid = %s", (target_phone, uid))
             await conn.commit()

@@ -237,52 +237,52 @@ async def global_message_handler(event):
         event.handled = True
         return
         
-# Admin Quick Price Modifier Command
-if (text.startswith("/updateprice") or text.startswith("/updatestock")) and int(uid) == int(ADMIN_TELEGRAM_ID):
-    try:
-        if "," not in text:
-            await event.respond("❌ **Format Error!** Use:\n`/updateprice [tg/wa],CountryName,Price`\n\nExample:\n`/updateprice tg,India,45`\n`/updateprice wa,India,60`")
-            event.handled = True
-            return
-            
-        command_args = text.split(" ", 1)[1]
-        service_param, country_param, price_param = command_args.split(",")
-        
-        # Detect whether admin typed 'tg' or 'wa' and convert to formal labels
-        service_input = service_param.strip().lower()
-        service_target = "Telegram" if service_input == "tg" else "WhatsApp" if service_input == "wa" else None
-        
-        if not service_target:
-            await event.respond("❌ **Invalid Service Type!** Use `tg` for Telegram or `wa` for WhatsApp.")
-            return
-            
-        target_country = country_param.strip()
-        new_price = float(price_param.strip())
-        
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                # Insert or update price matching the specific application channel cleanly
-                await cursor.execute("""
-                    INSERT INTO country_prices (country, service_type, price) 
-                    VALUES (%s, %s, %s) 
-                    ON CONFLICT (country, service_type) 
-                    DO UPDATE SET price = EXCLUDED.price
-                """, (target_country, service_target, new_price))
-                await conn.commit()
+    # Admin Quick Price Modifier Command
+    if (text.startswith("/updateprice") or text.startswith("/updatestock")) and int(uid) == int(ADMIN_TELEGRAM_ID):
+        try:
+            if "," not in text:
+                await event.respond("❌ **Format Error!** Use:\n`/updateprice [tg/wa],CountryName,Price`\n\nExample:\n`/updateprice tg,India,45`\n`/updateprice wa,India,60`")
+                event.handled = True
+                return
                 
-        await event.respond(
-            f"💰 **Live Price Updated!**\n\n"
-            f"🤖 **Service:** {service_target}\n"
-            f"🌍 **Country:** {target_country}\n"
-            f"💵 **New Price:** ₹{new_price:.2f}\n\n"
-            f"Storefront selections updated instantly."
-        )
-    except Exception as e:
-        logging.error(f"Updateprice command error: {e}")
-        await event.respond("❌ **System Error!** Check your command parameters and try again.")
-    event.handled = True
-    return
-   
+            command_args = text.split(" ", 1)[1]
+            service_param, country_param, price_param = command_args.split(",")
+            
+            # Detect whether admin typed 'tg' or 'wa' and convert to formal labels
+            service_input = service_param.strip().lower()
+            service_target = "Telegram" if service_input == "tg" else "WhatsApp" if service_input == "wa" else None
+            
+            if not service_target:
+                await event.respond("❌ **Invalid Service Type!** Use `tg` for Telegram or `wa` for WhatsApp.")
+                return
+                
+            target_country = country_param.strip()
+            new_price = float(price_param.strip())
+            
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    # Insert or update price matching the specific application channel cleanly
+                    await cursor.execute("""
+                        INSERT INTO country_prices (country, service_type, price) 
+                        VALUES (%s, %s, %s) 
+                        ON CONFLICT (country, service_type) 
+                        DO UPDATE SET price = EXCLUDED.price
+                    """, (target_country, service_target, new_price))
+                    await conn.commit()
+                    
+            await event.respond(
+                f"💰 **Live Price Updated!**\n\n"
+                f"🤖 **Service:** {service_target}\n"
+                f"🌍 **Country:** {target_country}\n"
+                f"💵 **New Price:** ₹{new_price:.2f}\n\n"
+                f"Storefront selections updated instantly."
+            )
+        except Exception as e:
+            logging.error(f"Updateprice command error: {e}")
+            await event.respond("❌ **System Error!** Check your command parameters and try again.")
+        event.handled = True
+        return
+
     # Admin WhatsApp Inventory Injector Command
     if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):
         try:

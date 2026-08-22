@@ -307,36 +307,37 @@ async def instant_whatsapp_otp_fetcher(event):
 async def refund_whatsapp_order_handler(event):
     _, target_phone = event.data.decode('utf-8').split(":")
     uid = event.sender_id
-    
+
     try:
         conn = await get_db_connection()
         async with conn.cursor() as cursor:
-                # Pull both the phone number and the original meta tracking string containing setup details
-                await cursor.execute("SELECT phone_number, status FROM active_orders WHERE phone_number = %s AND uid = %s", (target_phone, uid))
-                order_row = await cursor.fetchone()
-                if not order_row:
-                    await event.respond("❌ Order already cleared or processed.")
-                    await conn.close()
-                    return
-                
-                # Fetch the country name from your central stock table to verify dynamic pricing variables
-                await cursor.execute("SELECT country_name FROM whatsapp_stock WHERE phone_number = %s", (target_phone,))
-                stock_row = await cursor.fetchone()
-                country_name = stock_row[0] if stock_row else "DEFAULT"
-                
-                # Dynamically calculate the matching refund value from the database map matrix
-                try:
-                    custom_prices = await get_country_prices("WhatsApp")
-                    refund_amount = custom_prices.get(country_name, custom_prices.get("DEFAULT", 55.00))
-                except Exception:
-                    refund_amount = 55.00
+            # Check if active order exists
+            await cursor.execute("SELECT phone_number, status FROM active_orders WHERE phone_number = %s AND uid = %s", (target_phone, uid))
+            order_row = await cursor.fetchone()
+            if not order_row:
+                await event.respond("❌ Order already cleared or processed.")
+                await conn.close()
+                return
+            
+            # Fetch country name to map price attributes
+            await cursor.execute("SELECT country_name FROM whatsapp_stock WHERE phone_number = %s", (target_phone,))
+            stock_row = await cursor.fetchone()
+            country_name = stock_row[0] if stock_row else "DEFAULT"
+            
+            # Dynamically calculate the matching refund rate
+            try:
+                custom_prices = await get_country_prices("WhatsApp")
+                refund_amount = custom_prices.get(country_name, custom_prices.get("DEFAULT", 55.00))
+            except Exception:
+                refund_amount = 55.00
 
+            # Execute financial balances reversal safely inside data stream
             await cursor.execute("UPDATE users SET balance = balance + %s WHERE uid = %s", (refund_amount, uid))
             await cursor.execute("DELETE FROM active_orders WHERE phone_number = %s AND uid = %s", (target_phone, uid))
             await conn.commit()
-        await conn.close()
-        
-        await event.edit(f"🛑 **Order Cancelled Successfully!**\n\n📞 **Phone:** `{target_phone}`\n💰 **Refund Credit:** +₹{refund_amount:.2f}\n\nYour funds have been securely returned to your wallet balance instantly.")
+            await conn.close()
+
+        await event.edit(f"🛑 **Order Cancelled Successfully!**\n\n📞 **Phone:** `{target_phone}`\n💰 **Refund Credit:** +₹{refund_amount:.2f}\n\nFunds returned successfully.")
     except Exception as e:
         logging.error(f"Refund runtime error: {e}")
         await event.respond("❌ Failed processing wallet refund.")

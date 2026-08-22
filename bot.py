@@ -40,14 +40,26 @@ async def init_db():
                 await cursor.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid BIGINT, txn TEXT, session_amt INT DEFAULT 0)")
                 await cursor.execute("CREATE TABLE IF NOT EXISTS active_orders (phone_number TEXT, uid BIGINT, status TEXT)")
                 await cursor.execute("CREATE TABLE IF NOT EXISTS available_accounts (phone_number TEXT PRIMARY KEY, api_id TEXT, api_hash TEXT, string_session TEXT)")
-                await cursor.execute("CREATE TABLE IF NOT EXISTS country_prices (country TEXT PRIMARY KEY, price NUMERIC)")
+                
+                # Drop the old table layout if it exists to clear structure conflicts
+                await cursor.execute("DROP TABLE IF EXISTS country_prices CASCADE;")
+                
+                # Recreate the table supporting isolated platform profiles
+                await cursor.execute("""
+                    CREATE TABLE country_prices (
+                        country TEXT,
+                        service_type TEXT,
+                        price NUMERIC,
+                        PRIMARY KEY (country, service_type)
+                    )
+                """)
                 await conn.commit()
         logging.info("PostgreSQL structural database tables checked/created successfully.")
     except Exception as e:
         logging.error(f"Error initializing database: {e}")
 
-async def get_country_prices():
-    """Fetches real-time custom pricing from the database with hardcoded defaults as fallbacks."""
+async def get_country_prices(service_type="Telegram"):
+    """Fetches real-time custom pricing from the database filtered by app category."""
     defaults = {
         "Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04,
         "Canada": 40.04, "United States": 41.00, "India": 41.00, "Ethiopia": 41.00,
@@ -56,12 +68,15 @@ async def get_country_prices():
     try:
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute("SELECT country, price FROM country_prices")
+                await cursor.execute(
+                    "SELECT country, price FROM country_prices WHERE LOWER(service_type) = LOWER(%s)",
+                    (service_type,)
+                )
                 rows = await cursor.fetchall()
                 for country, price in rows:
                     defaults[country.strip()] = float(price)
     except Exception as e:
-        logging.error(f"Error fetching dynamic prices: {e}")
+        logging.error(f"Error fetching dynamic prices for {service_type}: {e}")
     return defaults
 
 async def get_user_bal(uid):
@@ -222,47 +237,51 @@ async def global_message_handler(event):
         event.handled = True
         return
         
-    # Admin Quick Price Modifier Command
-    if (text.startswith("/updateprice") or text.startswith("/updatestock")) and int(uid) == int(ADMIN_TELEGRAM_ID):
-        try:
-            if "," not in text:
-                await event.respond("❌ **Format Error!** Use:\n`/updateprice CountryName,Price`\n\nExample: `/updateprice India,48`")
-                event.handled = True
-                return
-
-            command_args = text.split(" ", 1)[1]
-            country_param, price_param = command_args.split(",")
-
-            target_country = country_param.strip()
-            new_price = float(price_param.strip())
-
-            async with await get_db_connection() as conn:
-                async with conn.cursor() as cursor:
-                    # Automatically ensure table exists to prevent silent query crashes
-                    await cursor.execute(
-                        "CREATE TABLE IF NOT EXISTS country_prices ("
-                        "country TEXT PRIMARY KEY, price REAL)"
-                    )
-                    await cursor.execute(
-                        "INSERT INTO country_prices (country, price) VALUES (%s, %s) "
-                        "ON CONFLICT (country) DO UPDATE SET price = EXCLUDED.price",
-                        (target_country, new_price)
-                    )
-                    await conn.commit()
-
-            await event.respond(
-                f"💰 **Live Price Updated!**\n\n"
-                f"🌍 **Country:** {target_country}\n"
-                f"💵 **New Price:** ₹{new_price:.2f}\n\n"
-                f"All storefront selections will use this price instantly."
-            )
-        except Exception as e:
-            import logging
-            logging.error(f"Updateprice command error: {e}")
-            await event.respond("❌ **System Error!** Check your command parameters and try again.")
+# Admin Quick Price Modifier Command
+if (text.startswith("/updateprice") or text.startswith("/updatestock")) and int(uid) == int(ADMIN_TELEGRAM_ID):
+    try:
+        if "," not in text:
+            await event.respond("❌ **Format Error!** Use:\n`/updateprice [tg/wa],CountryName,Price`\n\nExample:\n`/updateprice tg,India,45`\n`/updateprice wa,India,60`")
+            event.handled = True
+            return
+            
+        command_args = text.split(" ", 1)[1]
+        service_param, country_param, price_param = command_args.split(",")
         
-        event.handled = True
-        return
+        # Detect whether admin typed 'tg' or 'wa' and convert to formal labels
+        service_input = service_param.strip().lower()
+        service_target = "Telegram" if service_input == "tg" else "WhatsApp" if service_input == "wa" else None
+        
+        if not service_target:
+            await event.respond("❌ **Invalid Service Type!** Use `tg` for Telegram or `wa` for WhatsApp.")
+            return
+            
+        target_country = country_param.strip()
+        new_price = float(price_param.strip())
+        
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                # Insert or update price matching the specific application channel cleanly
+                await cursor.execute("""
+                    INSERT INTO country_prices (country, service_type, price) 
+                    VALUES (%s, %s, %s) 
+                    ON CONFLICT (country, service_type) 
+                    DO UPDATE SET price = EXCLUDED.price
+                """, (target_country, service_target, new_price))
+                await conn.commit()
+                
+        await event.respond(
+            f"💰 **Live Price Updated!**\n\n"
+            f"🤖 **Service:** {service_target}\n"
+            f"🌍 **Country:** {target_country}\n"
+            f"💵 **New Price:** ₹{new_price:.2f}\n\n"
+            f"Storefront selections updated instantly."
+        )
+    except Exception as e:
+        logging.error(f"Updateprice command error: {e}")
+        await event.respond("❌ **System Error!** Check your command parameters and try again.")
+    event.handled = True
+    return
    
     # Admin WhatsApp Inventory Injector Command
     if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):

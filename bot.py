@@ -9,6 +9,24 @@ import psycopg
 import qrcode
 from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
+from flask import Flask
+from threading import Thread
+
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is Alive!"
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# Apne bot.start() ya main execution line se bilkul pehle isko call kar dena:
+keep_alive()
 
 # Set up logging for Render dashboard monitoring
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")

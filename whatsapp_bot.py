@@ -203,60 +203,89 @@ async def whatsapp_storefront_menu_handler(event):
         logging.error(f"Storefront layout breakdown exception: {e}")
         await event.respond("❌ An error occurred while generating the WhatsApp store list.")
 
-# -------------------------------------------------------------
-# 🟢 2. Custom Button Interaction Handlers
-# -------------------------------------------------------------
+# =============================================================
+# 🟢 2. Custom Button Interaction Handlers (Strict Wallet Check)
+# =============================================================
 @wa_bot.on(events.CallbackQuery(pattern=r"^buy_wa_"))
 async def buy_whatsapp_account_handler(event):
-    target_slug = event.data.decode('utf-8').replace("buy_wa_", "").strip()
     uid = event.sender_id
-    
     try:
+        target_slug = event.data.decode('utf-8').replace("buy_wa_", "").strip()
+        
         conn = await get_db_connection()
         async with conn.cursor() as cursor:
-            await cursor.execute("SELECT phone_number, download_link, auth_key, country_name FROM whatsapp_stock WHERE LOWER(REPLACE(country_name, ' ', '')) LIKE %s LIMIT 1", (f"%{target_slug}%",))
+            # 1. 📦 Sabse pehle stock se number aur uski details nikalein
+            await cursor.execute(
+                "SELECT phone_number, download_link, auth_key, country_name FROM whatsapp_stock WHERE LOWER(REPLACE(country_name, ' ', '')) = %s LIMIT 1",
+                (target_slug,)
+            )
             selected_wa = await cursor.fetchone()
-
+            
             if not selected_wa:
-                await event.respond("⚠️ **Out of Stock!** No available numbers match your requested country.")
-                await conn.close()
+                await event.respond("⚠️ **Out of Stock!** No available numbers match this region currently.")
+                await event.answer()
                 return
 
-        phone, inst_id, api_token, country_name = selected_wa
-        
-        # Calculate dynamic country pricing parameter lookup matching database entries
-        try:
-            custom_prices = await get_country_prices("WhatsApp")
-            display_price = custom_prices.get(country_name, custom_prices.get("DEFAULT", 55.00))
-        except Exception:
-            display_price = 55.00
+            phone, inst_id, api_token, country_name = selected_wa
 
+            # 2. 💵 Country ka price nikalein
+            try:
+                custom_prices = await get_country_prices("WhatsApp")
+            except Exception:
+                custom_prices = {}
+                
+            display_price = custom_prices.get(country_name, custom_prices.get("DEFAULT", 55.00))
+
+            # 3. 💳 User ka actual wallet balance fetch karein
             await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
             bal_row = await cursor.fetchone()
             user_bal = bal_row[0] if bal_row else 0
 
+            # 🛑 Tight Security Check: Agar balance price se kam hai, toh yahi block karo
             if user_bal < display_price:
-                await event.respond(f"❌ **Insufficient Funds!**\nThis costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.")
-                await conn.close()
+                await event.respond(
+                    f"❌ **Insufficient Funds!**\n\n"
+                    f"This account costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.\n"
+                    f"Please add funds to your wallet first!"
+                )
+                await event.answer()
                 return
 
+            # 4. 💸 Agar balance hai, toh paise deduct karein aur database update karein
             await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
             await cursor.execute("DELETE FROM whatsapp_stock WHERE phone_number = %s", (phone,))
-            await cursor.execute("INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)", (phone, uid, "WAPPFLY_ACTIVE"))
+            await cursor.execute("INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)", (phone, uid, 'pending'))
             await conn.commit()
-        await conn.close()
+
+        # 📱 User ko reserved screen aur Get OTP ka button dikhana
+        recheck_kb = [[Button.inline("🔄 Get WhatsApp OTP", data=f"check_wa_otp:{phone}")]]
+        await event.edit(
+            f"🎉 **WhatsApp Number Reserved!**\n\n"
+            f"📞 **Phone:** `{phone}`\n"
+            f"🌍 **Country:** {country_name}\n\n"
+            f"Request your SMS code inside your official WhatsApp mobile app, "
+            f"then click the button below to fetch your OTP instantly!", 
+            buttons=recheck_kb
+        )
+        
+        # 🔔 Admin ko real sold alert send karna
         admin_alert_text = f"💰 **WhatsApp Stock Sold Alert!**\n\n📞 **Number:** `{phone}`\n🌍 **Country:** {country_name}\n👤 **Buyer UID:** `{uid}`\n💵 **Price:** ₹{display_price:.2f}"
         try:
             await wa_bot.send_message(int(ADMIN_TELEGRAM_ID), admin_alert_text)
         except Exception:
             pass
 
-        recheck_kb = [[Button.inline("🔄 Get WhatsApp OTP", data=f"check_wa_otp:{phone}")]]
-        await event.edit(f"🎉 **WhatsApp Number Reserved!**\n\n📞 **Phone:** `{phone}`\n🌍 **Country:** {country_name}\n\nRequest your SMS code inside your official WhatsApp mobile app, then click the button below to fetch your OTP instantly!", buttons=recheck_kb)
     except Exception as e:
         logging.error(f"Checkout block crash: {e}")
-        await event.respond("❌ An error occurred during selection processing.")
-
+        await event.respond("❌ **An error occurred during selection processing.**")
+    finally:
+        if 'conn' in locals():
+            await conn.close()
+            
+    await event.answer()
+    event.handled = True
+    return
+    
 # -------------------------------------------------------------
 # 🟢 3. The Live Wappfly OTP Interceptor + Auto-Refund Engine
 # -------------------------------------------------------------

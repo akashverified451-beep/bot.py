@@ -282,7 +282,28 @@ async def buy_whatsapp_account_handler(event):
         if 'conn' in locals():
             await conn.close()
             
-    await event.answer()
+    # 📢 USER WELCOME MESSAGE & GROUP LINK PROMPT
+    # ⚠️ NOTE: Niche diye gaye link 'https://t.me' ko apne asli group link se badal dein!
+    group_link = "https://t.me/SkyOTP_Daily_Update"
+    
+    welcome_text = (
+        f"👋 **Hello {first_name}! Welcome to SKY OTP BOT.**\n\n"
+        f"🛒 Yahan se aap high-quality WhatsApp aur Telegram accounts buy kar sakte hain.\n\n"
+        f"📢 **Sabse Zaroori Baat:** Humare official Stock Update Group ko zaroor join karein, "
+        f"jahan har naye stock ki update sabse pehle milti hai! 👇"
+    )
+
+    # Inline button banana group join karne ke liye
+    buttons_kb = [
+        [Button.url("🚀 Join Stock Updates Group 🚀", url=group_link)],
+        [Button.inline("🤖 Open Bot Menu", data="main_menu")] # Agar aapke bot mein main menu ka callback hai
+    ]
+
+    try:
+        await event.respond(welcome_text, buttons=buttons_kb)
+    except Exception as e:
+        logging.error(f"Error sending welcome message: {e}")
+            
     event.handled = True
     return
     

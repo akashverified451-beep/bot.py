@@ -83,51 +83,50 @@ async def update_whatsapp_pricing_handler(event):
             "Example:\n`/updateprice_wa United States,65.00`"
         )
 
-# 🟢 live_user_join_notifier_handler completely with this:
-@wa_bot.on(events.NewMessage())
+# -------------------------------------------------------------
+# 🟢 Fixed Live User Join Notifier (Ab fake alerts nahi bhejega)
+# -------------------------------------------------------------
+@wa_bot.on(events.NewMessage(pattern=r"^/start\$"))  # 👈 Exact /start command lock
 async def live_user_join_notifier_handler(event):
     uid = event.sender_id
-    text = event.text or ""
-    
-    # 🛑 PROTECTION GUARD: Drop administrative alert logs instantly
-    if "New User Joined" in text or "Stock Sold Alert" in text:
-        return
-        
-    # Ignore messages sent by your own admin account to break echo loops
+
+    # Admin agar khud type kare to ignore maarein
     if int(uid) == int(ADMIN_TELEGRAM_ID):
+        event.handled = True
         return
 
-    # Listen to the global message pool for any start commands safely
-    if "/start" in text.lower():
-        try:
-            conn = await get_db_connection()
-            async with conn.cursor() as cursor:
-                # Using the correct Psycopg 3 numbered placeholder format ($1)
-                await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
-                row = await cursor.fetchone()
+    try:
+        conn = await get_db_connection()
+        async with conn.cursor() as cursor:
+            # Check user table using clean placeholders
+            await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
+            row = await cursor.fetchone()
+            
+            # Agar user database mein nahi hai, toh initialize aur notify karein
+            if row is None:
+                sender = await event.get_sender()
+                username = f"@{sender.username}" if sender.username else "No Username"
+                first_name = sender.first_name or "User"
                 
-                # If row is empty, this is a completely brand new customer profile!
-                if row is None:
-                    sender = await event.get_sender()
-                    username = f"@{sender.username}" if sender.username else "No Username"
-                    first_name = sender.first_name or "User"
-                    
-                    join_alert = (
-                        f"👤 **🚀 New User Joined Your Bot!**\n\n"
-                        f"🏷️ **Name:** {first_name}\n"
-                        f"💬 **Username:** {username}\n"
-                        f"🆔 **Telegram UID:** `{uid}`\n"
-                        f"📊 Status: Profile initialized automatically inside PostgreSQL."
-                    )
-                    try:
-                        await wa_bot.send_message(int(ADMIN_TELEGRAM_ID), join_alert)
-                    except Exception:
-                        pass
-        except Exception as e:
-            logging.error(f"Join monitoring loop exception error: {e}")
-        finally:
-            if 'conn' in locals():
-                await conn.close()
+                join_alert = (
+                    f"👤 **🚀 New User Joined Your Bot!**\n\n"
+                    f"🏷 **Name:** {first_name}\n"
+                    f"💬 **Username:** {username}\n"
+                    f"🆔 **Telegram UID:** `{uid}`\n"
+                    f"📊 Status: Profile initialized automatically inside PostgreSQL."
+                )
+                try:
+                    await wa_bot.send_message(int(ADMIN_TELEGRAM_ID), join_alert)
+                except Exception:
+                    pass
+    except Exception as e:
+        logging.error(f"Join monitoring loop exception error: {e}")
+    finally:
+        if 'conn' in locals():
+            await conn.close()
+            
+    event.handled = True
+    return
 
 # -------------------------------------------------------------
 # 📊 Administrative Total Registered Customer Count Lookup Command

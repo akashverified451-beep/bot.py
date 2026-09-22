@@ -84,9 +84,9 @@ async def update_whatsapp_pricing_handler(event):
         )
 
 # -------------------------------------------------------------
-# 🟢 Fixed Live User Join Notifier (Ab fake alerts nahi bhejega)
+# 🟢 Fixed Live User Join Notifier (Ab 100% Alert Bhe jega)
 # -------------------------------------------------------------
-@wa_bot.on(events.NewMessage(pattern=r"^/start\$"))  # 👈 Exact /start command lock
+@wa_bot.on(events.NewMessage(pattern=r"^/start\$"))  # Exact /start command lock
 async def live_user_join_notifier_handler(event):
     uid = event.sender_id
 
@@ -101,13 +101,24 @@ async def live_user_join_notifier_handler(event):
             # Check user table using clean placeholders
             await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
             row = await cursor.fetchone()
-            
-            # Agar user database mein nahi hai, toh initialize aur notify karein
+
+            # Agar user database mein nahi hai, toh notify aur save karein
             if row is None:
+                # 💡 get_sender() agar fail ho, toh event.sender se details nikalenge safely
                 sender = await event.get_sender()
-                username = f"@{sender.username}" if sender.username else "No Username"
-                first_name = sender.first_name or "User"
+                username = f"@{sender.username}" if (sender and sender.username) else f"@{event.sender.username}" if (event.sender and event.sender.username) else "No Username"
+                first_name = sender.first_name if (sender and sender.first_name) else event.sender.first_name if (event.sender and event.sender.first_name) else "User"
                 
+                # 💡 Pehle database mein insert kar dete hain taaki profile initialization complete ho sake
+                try:
+                    await cursor.execute(
+                        "INSERT INTO users (uid, balance) VALUES (%s, %s) ON CONFLICT (uid) DO NOTHING", 
+                        (uid, 0.00)
+                    )
+                    await conn.commit()
+                except Exception as db_err:
+                    logging.error(f"Failed to insert new user in DB: {db_err}")
+
                 join_alert = (
                     f"👤 **🚀 New User Joined Your Bot!**\n\n"
                     f"🏷 **Name:** {first_name}\n"
@@ -115,16 +126,16 @@ async def live_user_join_notifier_handler(event):
                     f"🆔 **Telegram UID:** `{uid}`\n"
                     f"📊 Status: Profile initialized automatically inside PostgreSQL."
                 )
-                try:
-                    await wa_bot.send_message(int(ADMIN_TELEGRAM_ID), join_alert)
-                except Exception:
-                    pass
+                
+                # Admin ko alert send karna (Without inside try block risk)
+                await wa_bot.send_message(int(ADMIN_TELEGRAM_ID), join_alert)
+                
     except Exception as e:
         logging.error(f"Join monitoring loop exception error: {e}")
     finally:
-        if 'conn' in locals():
+        if 'conn' in locals() and conn:
             await conn.close()
-            
+    
     event.handled = True
     return
 

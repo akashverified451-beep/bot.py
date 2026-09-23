@@ -1,3 +1,5 @@
+import io
+import qrcode
 import os
 import re
 import asyncio

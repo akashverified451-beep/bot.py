@@ -303,9 +303,7 @@ async def global_message_handler(event):
         return
 
         # # Admin WhatsApp Inventory Injector Command with LIVE Wappfly Validation Check
-        if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):
-            try:
-                import aiohttp
+        if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):    
                 command_args = text.split(" ", 1)[1]
                 phone, country = [item.strip() for item in command_args.split(",")]
                 
@@ -336,11 +334,9 @@ async def global_message_handler(event):
                         await conn.commit()
 
                 await status_msg.edit(f"🟢 **WhatsApp Stock Registered!**\n\n📞 **Number:** `{phone}`\n🌍 **Country:** {country}\n📦 Inventory verified & updated cleanly.")
-            except Exception as e:
-                await event.respond("❌ **Format Mistake!** Use exactly:\n`/addwa Phone,Country`\n\nExample:\n`/addwa +19342478524,United States`")
-            event.handled = True
-            return
-
+                event.handled = True
+                return
+        
     # Admin Stock Session Validator Engine
     if text.startswith("/checkstock") and int(uid) == int(ADMIN_TELEGRAM_ID):
         try:

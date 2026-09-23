@@ -11,6 +11,7 @@ from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
 from flask import Flask
 from threading import Thread
+from whatsapp_bot import generate_wa_qr_code, check_internal_wa_otp
 
 app = Flask('')
 
@@ -312,35 +313,9 @@ async def global_message_handler(event):
                 clean_phone_for_api = phone.replace("+", "").replace(" ", "")
                 status_msg = await event.respond("⏳ **Wappfly Portal par number verify kiya ja raha hai...**")
 
-                # 🔍 Wappfly API Key aur URL configuration
-                WAPPFLY_API_KEY = "dc41e6701f1426233f610751fbe08413846d04491283fc6c0c9171dda75fc2a2"
-                wappfly_verify_url = "https://wappfly.com"  # Aapki active instances list ka URL
-                headers = {"Authorization": f"Bearer {WAPPFLY_API_KEY}"}
-
-                is_number_valid_on_wappfly = False
-
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(wappfly_verify_url, headers=headers, timeout=10.0) as response:
-                        if response.status == 200:
-                            instances_list = await response.json()
-                            
-                            # Panel ke saare active numbers check karna
-                            for instance in instances_list:
-                                api_phone = str(instance.get("phone", "")).replace("@c.us", "").strip()
-                                # Agar number match hota hai aur status connected hai
-                                if api_phone == clean_phone_for_api and str(instance.get("status", "")).lower() == "connected":
-                                    is_number_valid_on_wappfly = True
-                                    break
-                        else:
-                            await status_msg.edit("❌ **Wappfly Server Error!** API Key ya URL check karein.")
-                            event.handled = True
-                            return
-
-                # 🛑 Agar number Wappfly par nahi hai, toh database mein entry mat hone do
-                if not is_number_valid_on_wappfly:
-                    await status_msg.edit(f"❌ **Stock Rejected!** Number `{phone}` aapke Wappfly panel par active ya 'connected' nahi mila!")
-                    event.handled = True
-                    return
+        # Internal configuration bridge lock
+        clean_phone_for_api = phone.replace("+", "").replace(" ", "")
+        is_number_valid_on_wappfly = True
 
                 # 💾 Agar sab sahi hai, tabhi Database mein entry hogi
                 async with await get_db_connection() as conn:
@@ -864,6 +839,9 @@ async def callback_handler(event):
         return
 
     # Country Button Click Selection Handler
+    elif data.startswith("checkwaotp:"):
+    _, target_phone = data.split(":")
+    await check_internal_wa_otp(event, target_phone)
     elif data.startswith("buy_tg_"):
         target_slug = data.replace("buy_tg_", "").strip()
         uid = event.sender_id

@@ -953,11 +953,14 @@ async def callback_handler(event):
 
         await event.respond(success_msg, buttons=recheck_kb)
 
-    except Exception as e:
-        import logging
-        logging.error(f"Error during storefront purchase handler: {e}")
-        await event.respond("❌ **An error occurred while processing your selection request.**")
-        return
+        try:
+            # Code structure placeholder to process purchase metrics safely
+            pass
+        except Exception as e:
+            import logging
+            logging.error(f"Error during storefront purchase handler: {e}")
+            await event.respond("❌ **An error occurred while processing your selection request.**")
+            return
 
     # # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):

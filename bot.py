@@ -399,21 +399,21 @@ if text.startswith("/checkstock") and int(uid) == int(ADMIN_TELEGRAM_ID):
 
         # Final summary report sent to Admin
         live_count = total_accounts - dead_count
-            report_msg = (
-                f"📊 **Inventory Audit Completed!**\n\n"
-                f"📦 **Total Accounts Scanned:** `{total_accounts}`\n"
-                f"✅ **Active/Valid Sessions:** `{live_count}`\n"
-                f"🗑️ **Dead Sessions Deleted:** `{dead_count}`\n\n"
-                f"Your active storefront inventory has been cleaned and is safe for users."
-            )
-            await status_msg.edit(report_msg)
+        report_msg = (
+            f"📊 **Inventory Audit Completed!**\n\n"
+            f"📦 **Total Accounts Scanned:** `{total_accounts}`\n"
+            f"✅ **Active/Valid Sessions:** `{live_count}`\n"
+            f"❌ **Dead Sessions Deleted:** `{dead_count}`\n\n"
+            f"Your active storefront inventory has been cleaned and is safe!"
+        )
+        await status_msg.edit(report_msg)
 
-        except Exception as global_audit_err:
-            logging.error(f"Global stock audit system crash: {global_audit_err}")
-            await event.respond("❌ **Critical breakdown inside inventory validator engine.**")
-            
-        event.handled = True
-        return
+    except Exception as global_audit_err:
+        logging.error(f"Global stock audit system crash: {global_audit_err}")
+        await event.respond("❌ **Critical breakdown inside inventory validator engine!**")
+
+    event.handled = True
+    return
     
     # 1. Handle /start Command
     if text.startswith("/start"):

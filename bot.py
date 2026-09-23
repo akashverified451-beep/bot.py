@@ -1033,7 +1033,7 @@ async def callback_handler(event):
                         if target_phone.startswith(prefix):
                             detected_country = prefix_to_country[prefix]
                             break
-                   
+
                     custom_otp_message = (
                         f"{country_flags.get(detected_country, '🌐')} **{detected_country}** "
                         f"**₹{custom_prices.get(detected_country, DEFAULT_PRICE)}**\n"
@@ -1044,26 +1044,20 @@ async def callback_handler(event):
                     from telethon import Button
                     recheck_kb = [[Button.inline("🔄 Re-Check OTP", data=f"checkotp:{target_phone}")]]
                     await event.edit(custom_otp_message, buttons=recheck_kb)
-                    break
+                else:
+                    await event.respond(f"📩 **Latest secure message payload for `{target_phone}`:**\n\n`{fetched_otp}`")
 
-                # Wait 2 seconds before checking the inbox again
-                await asyncio.sleep(2)
-        except Exception as e:
-            logging.error(f"Instant Live Check Fault: {e}")
-            fetched_otp = "⚠️ NO LIVE SMS FOUND YET"
-        else:
-            fetched_otp = "❌ SESSION EXPIRED / TERMINATED"
+                await temp_client.disconnect()
 
-        finally:
-            if temp_client:
-                # # CRITICAL FIX: is_connected() requires await
-                if await temp_client.is_connected():
+            except Exception as check_err:
+                logging.error(f"OTP check failed: {check_err}")
+                await event.respond("⚠️ **Failed to connect or fetch secure message stream context.**")
+                if temp_client:
                     await temp_client.disconnect()
-                    
-    else:
-        await event.respond("⚠️ **Active order details not found or corrupted.**")
-    return
-
+        else:
+            await event.respond("⚠️ **Active order details not found or corrupted.**")
+        return
+        
     # Layout processing
     custom_prices = await get_country_prices()
     DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)

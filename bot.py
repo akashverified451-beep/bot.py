@@ -337,7 +337,7 @@ if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):
     event.handled = True
     return
 
-# Admin Stock Session Validator Engine
+# # Admin Stock Session Validator Engine
 if text.startswith("/checkstock") and int(uid) == int(ADMIN_TELEGRAM_ID):
     try:
         status_msg = await event.respond("🔍 **Scanning inventory database...**")
@@ -352,51 +352,53 @@ if text.startswith("/checkstock") and int(uid) == int(ADMIN_TELEGRAM_ID):
             await status_msg.edit("📭 **Your stock inventory is completely empty!** Nothing to validate.")
             return
 
-            total_accounts = len(all_stock)
-            checked_count = 0
-            dead_count = 0
+        total_accounts = len(all_stock)
+        checked_count = 0
+        dead_count = 0
+
         from telethon.sessions import StringSession
-                for phone, api_id, api_hash, session_str in all_stock:
-                        checked_count += 1
-                        is_alive = False
-                
-                # Periodically update the admin so you can see live progress
-                if checked_count % 2 == 0 or checked_count == total_accounts:
-                    await status_msg.edit(f"⚡ **Validating Stock:** `{checked_count}`/`{total_accounts}` accounts processed...")
 
-                try:
-                    # Setup temporary diagnostic client
-                    temp_check = TelegramClient(
-                        StringSession(str(session_str or "").strip()), 
-                        int(api_id), 
-                        str(api_hash or "").strip(),
-                        connection_retries=1,
-                        retry_delay=1,
-                        receive_updates=False
-                    )
-                    
-                    # Connect with a secure timeout window
-                    await asyncio.wait_for(temp_check.connect(), timeout=8.0)
-                    
-                    if await temp_check.is_user_authorized():
-                        is_alive = True
-                    
-                    await temp_check.disconnect()
-                    
-                except Exception as check_err:
-                    logging.error(f"Validation connectivity fault for {phone}: {check_err}")
-                    is_alive = False
+        for phone, api_id, api_hash, session_str in all_stock:
+            checked_count += 1
+            is_alive = False
 
-                # If the account session is dead or expired, wipe it from inventory instantly
-                if not is_alive:
-                    dead_count += 1
-                    async with await get_db_connection() as conn:
-                        async with conn.cursor() as cursor:
-                            await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone,))
-                            await conn.commit()
+            # Periodically update the admin so you can see live progress
+            if checked_count % 2 == 0 or checked_count == total_accounts:
+                await status_msg.edit(f"⚡ **Validating Stock:** `{checked_count}`/`{total_accounts}` accounts processed...")
 
-            # Final summary report sent to Admin
-            live_count = total_accounts - dead_count
+            try:
+                # Setup temporary diagnostic client
+                temp_check = TelegramClient(
+                    StringSession(str(session_str or "").strip()),
+                    int(api_id),
+                    str(api_hash or "").strip(),
+                    connection_retries=1,
+                    retry_delay=1,
+                    receive_updates=False
+                )
+
+                # Connect with a secure timeout window
+                await asyncio.wait_for(temp_check.connect(), timeout=8.0)
+
+                if await temp_check.is_user_authorized():
+                    is_alive = True
+
+                await temp_check.disconnect()
+
+            except Exception as check_err:
+                logging.error(f"Validation connectivity fault for {phone}: {check_err}")
+                is_alive = False
+
+            # If the account session is dead or expired, wipe it from inventory instantly
+            if not is_alive:
+                dead_count += 1
+                async with await get_db_connection() as conn:
+                    async with conn.cursor() as cursor:
+                        await cursor.execute("DELETE FROM whatsapp_stock WHERE phone_number = %s", (phone,))
+                        await conn.commit()
+
+        # Final summary report sent to Admin
+        live_count = total_accounts - dead_count
             report_msg = (
                 f"📊 **Inventory Audit Completed!**\n\n"
                 f"📦 **Total Accounts Scanned:** `{total_accounts}`\n"

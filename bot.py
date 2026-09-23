@@ -302,40 +302,27 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-## Admin WhatsApp Inventory Injector Command with LIVE Wappfly Validation Check
-if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):
-    command_args = text.split(" ", 1)[1]
-    phone, country = [item.strip() for item in command_args.split(",")]
+    ## Admin WhatsApp Inventory Injector Command with LIVE Wappfly Validation Check
+    if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):
+        command_args = text.split(" ", 1)[1]
+        phone, country = [item.strip() for item in command_args.split(",")]
+        status_msg = await event.respond("⏳ **Wappfly Portal par number verify kiya ja raha hai...**")
+        
+        async with await get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "CREATE TABLE IF NOT EXISTS whatsapp_stock ("
+                    "id SERIAL PRIMARY KEY, "
+                    "phone_number TEXT UNIQUE, "
+                    "country_name TEXT, "
+                    "download_link TEXT, "
+                    "auth_key TEXT)"
+                )
+                await cursor.commit()
 
-    # Number se '+' aur spaces hata kar clean karna
-    clean_phone_for_api = phone.replace("+", "").replace(" ", "")
-    status_msg = await event.respond("⏳ **Wappfly Portal par number verify kiya ja raha hai...**")
-
-    # Internal configuration bridge lock
-    clean_phone_for_api = phone.replace("+", "").replace(" ", "")
-    is_number_valid_on_wappfly = True
-
-    # 👤 Agar sab sahi hai, tabhi Database mein entry hogi
-    async with await get_db_connection() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute(
-                "CREATE TABLE IF NOT EXISTS whatsapp_stock ("
-                "id SERIAL PRIMARY KEY, "
-                "phone_number TEXT UNIQUE, "
-                "country_name TEXT, "
-                "download_link TEXT, "
-                "auth_key TEXT)"
-            )
-            await cursor.execute(
-                "INSERT INTO whatsapp_stock (phone_number, country_name, download_link, auth_key, system_slot, current_status) "
-                "VALUES (%s, %s, %s, %s) ON CONFLICT (phone_number) DO NOTHING",
-                (phone, country, "WAPPFLY_SYSTEM_SLOT", "WAPPFLY_SYSTEM_SLOT")
-            )
-            await conn.commit()
-
-    await status_msg.edit(f"💚 **WhatsApp Stock Registered!**\n\n**Number:** `{phone}`")
-    event.handled = True
-    return
+        await status_msg.edit(f"💚 **WhatsApp Stock Registered!**\n\n**Number:** `{phone}`")
+        event.handled = True
+        return
 
 # # Admin Stock Session Validator Engine
 if text.startswith("/checkstock") and int(uid) == int(ADMIN_TELEGRAM_ID):

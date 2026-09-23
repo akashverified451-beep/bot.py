@@ -1048,12 +1048,11 @@ async def callback_handler(event):
 
                 # Wait 2 seconds before checking the inbox again
                 await asyncio.sleep(2)
-            else:
-                fetched_otp = "❌ SESSION EXPIRED / TERMINATED"
-
         except Exception as e:
             logging.error(f"Instant Live Check Fault: {e}")
             fetched_otp = "⚠️ NO LIVE SMS FOUND YET"
+        else:
+            fetched_otp = "❌ SESSION EXPIRED / TERMINATED"
 
         finally:
             if temp_client:

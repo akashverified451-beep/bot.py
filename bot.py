@@ -352,16 +352,13 @@ if text.startswith("/checkstock") and int(uid) == int(ADMIN_TELEGRAM_ID):
             await status_msg.edit("📭 **Your stock inventory is completely empty!** Nothing to validate.")
             return
 
-        total_accounts = len(all_stock)
-        checked_count = 0
-        dead_count = 0
-
-            
-            from telethon.sessions import StringSession
-            
-            for phone, api_id, api_hash, session_str in all_stock:
-                checked_count += 1
-                is_alive = False
+            total_accounts = len(all_stock)
+            checked_count = 0
+            dead_count = 0
+        from telethon.sessions import StringSession
+                for phone, api_id, api_hash, session_str in all_stock:
+                        checked_count += 1
+                        is_alive = False
                 
                 # Periodically update the admin so you can see live progress
                 if checked_count % 2 == 0 or checked_count == total_accounts:

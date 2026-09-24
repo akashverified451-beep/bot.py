@@ -84,6 +84,13 @@ async def update_whatsapp_pricing_handler(event):
             "Example:\n`/updateprice_wa United States,65.00`"
         )
 
+   @wa_bot.on(events.NewMessage)
+async def master_whatsapp_handler(event):
+    if not event.is_private:
+        return
+    uid = event.sender_id
+    text = event.text or ""
+
     ## Admin WhatsApp Inventory Injector Command - 100% FREE AUTOMATIC CLOUD SERVER GATEWAY
     if text.startswith("/addwa") and int(uid) == int(ADMIN_TELEGRAM_ID):
         status_msg = await event.respond("⏳ **Apne Lifetime FREE Cloud VPS server se session secure tunnel create kiya ja raha hai...**")

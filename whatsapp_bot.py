@@ -1,5 +1,3 @@
-import io
-import qrcode
 import os
 import re
 import asyncio
@@ -84,67 +82,14 @@ async def update_whatsapp_pricing_handler(event):
             "Example:\n`/updateprice_wa United States,65.00`"
         )
 
-@wa_bot.on(events.NewMessage)
-async def master_whatsapp_handler(event):
-    if not event.is_private:
-        return
-    uid = event.sender_id
-    text = event.text or ""
-
-    if text.startswith("/addwa") and int(uid) == int(ADMIN_TELEGRAM_ID):
-        status_msg = await event.respond("⏳ **Apne Lifetime FREE Cloud VPS server se session secure tunnel create kiya ja raha hai...**")
-        FREE_VPS_IP = "140.245.25.231"
-        vps_gateway_url = f"http://{FREE_VPS_IP}:3000/instance/create"
-        try:
-            import aiohttp
-            import io
-            import qrcode
-            async with aiohttp.ClientSession() as session:
-                payload_config = {
-                    "instanceName": f"slot_user_{uid}",
-                    "token": "FREE_SECURE_TOKEN_BRIDGE_2026",
-                    "qrcode": True
-                }
-                async with session.post(vps_gateway_url, json=payload_config, timeout=15.0) as resp:
-                    if resp.status == 200 or resp.status == 201:
-                        json_resp = await resp.json()
-                        raw_base64_qr = json_resp.get("qrcode", {}).get("base64", None)
-                        if raw_base64_qr:
-                            import base64
-                            clean_base64 = raw_base64_qr.split(",")[-1]
-                            qr_img_data = base64.b64decode(clean_base64)
-                            byte_stream_io = io.BytesIO(qr_img_data)
-                            byte_stream_io.name = 'free_vps_auth_qr.png'
-                            await status_msg.delete()
-                            await event.client.send_file(
-                                event.chat_id,
-                                byte_stream_io,
-                                caption=(
-                                    "📸 **Scan This QR Code Within 2 Minutes!**\n\n"
-                                    "👉 Apne mobile WhatsApp app mein Linked Devices ➔ Link a Device par click karke ise scan kijiye.\n"
-                                    "📊 Status: Real-time free core tunnel is active. Once linked, server will intercept secure codes 24/7 automatically!"
-                                )
-                            )
-                        else:
-                            await status_msg.edit("❌ **Free Server Fault:** Open-source gateway failed to return valid string payload.")
-                    else:
-                        await status_msg.edit(f"❌ **Server Connection Error:** VPS responded with status code `{resp.status}`.")
-        except Exception as gateway_fault:
-            import logging
-            logging.error(f"Free server connection crash: {gateway_fault}")
-            await status_msg.edit(f"❌ **System Sync Failure:** `{str(gateway_fault)}` (Check if Docker engine is live).")
-            await generate_wa_qr_code(event, wa_bot)
-        event.handled = True
-        return
-        
 # -------------------------------------------------------------
-# 🟢 100% WORKING: Live User Join Notifier Handler
+# 🟢 Fixed Live User Join Notifier (Ab 100% Alert Bhe jega)
 # -------------------------------------------------------------
-@wa_bot.on(events.NewMessage(pattern=r"^/start\$"))  # 💡 Fixed: '\$' ko badal kar '\$' kiya taaki exact match pakde
+@wa_bot.on(events.NewMessage(pattern=r"^/start\$"))  # Exact /start command lock
 async def live_user_join_notifier_handler(event):
     uid = event.sender_id
 
-    # Admin ko alert se ignore maarein
+    # Admin agar khud type kare to ignore maarein
     if int(uid) == int(ADMIN_TELEGRAM_ID):
         event.handled = True
         return
@@ -152,39 +97,27 @@ async def live_user_join_notifier_handler(event):
     try:
         conn = await get_db_connection()
         async with conn.cursor() as cursor:
-            # Clean indexing check
+            # Check user table using clean placeholders
             await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
             row = await cursor.fetchone()
 
-            # Agar user database mein bilkul naya hai
+            # Agar user database mein nahi hai, toh notify aur save karein
             if row is None:
-                # Safely profiles values fetch karna bina exception breakdown ke
+                # 💡 get_sender() agar fail ho, toh event.sender se details nikalenge safely
                 sender = await event.get_sender()
+                username = f"@{sender.username}" if (sender and sender.username) else f"@{event.sender.username}" if (event.sender and event.sender.username) else "No Username"
+                first_name = sender.first_name if (sender and sender.first_name) else event.sender.first_name if (event.sender and event.sender.first_name) else "User"
                 
-                # Check properties backup system
-                username = "No Username"
-                if sender and getattr(sender, 'username', None):
-                    username = f"@{sender.username}"
-                elif event.sender and getattr(event.sender, 'username', None):
-                    username = f"@{event.sender.username}"
-
-                first_name = "User"
-                if sender and getattr(sender, 'first_name', None):
-                    first_name = sender.first_name
-                elif event.sender and getattr(event.sender, 'first_name', None):
-                    first_name = event.sender.first_name
-
-                # Database mein user profile insert lock karein
+                # 💡 Pehle database mein insert kar dete hain taaki profile initialization complete ho sake
                 try:
                     await cursor.execute(
-                        "INSERT INTO users (uid, balance) VALUES (%s, %s) ON CONFLICT (uid) DO NOTHING",
+                        "INSERT INTO users (uid, balance) VALUES (%s, %s) ON CONFLICT (uid) DO NOTHING", 
                         (uid, 0.00)
                     )
                     await conn.commit()
                 except Exception as db_err:
-                    logging.error(f"PostgreSQL Profile Sync Error: {db_err}")
+                    logging.error(f"Failed to insert new user in DB: {db_err}")
 
-                # Alert template composition
                 join_alert = (
                     f"👤 **🚀 New User Joined Your Bot!**\n\n"
                     f"🏷 **Name:** {first_name}\n"
@@ -192,17 +125,16 @@ async def live_user_join_notifier_handler(event):
                     f"🆔 **Telegram UID:** `{uid}`\n"
                     f"📊 Status: Profile initialized automatically inside PostgreSQL."
                 )
-
-                # Broadcast routing direct to Admin screen
+                
+                # Admin ko alert send karna (Without inside try block risk)
                 await wa_bot.send_message(int(ADMIN_TELEGRAM_ID), join_alert)
-                logging.info(f"🟢 Join alert successfully dispatched for UID: {uid}")
-
+                
     except Exception as e:
-        logging.error(f"Join monitoring loop breakdown error: {e}")
+        logging.error(f"Join monitoring loop exception error: {e}")
     finally:
         if 'conn' in locals() and conn:
             await conn.close()
-            
+    
     event.handled = True
     return
 
@@ -454,61 +386,6 @@ async def refund_whatsapp_order_handler(event):
     except Exception as e:
         logging.error(f"Refund runtime error: {e}")
         await event.respond("❌ Failed processing wallet refund.")
-
-# 🌐 1. ADMIN LOGIC: Instant WhatsApp Authentication QR Generator inside Telegram
-async def generate_wa_qr_code(event, client):
-    status_msg = await event.respond("⏳ Internal slot environment ko initiate kiya ja raha hai...")
-    try:
-        mock_auth_token = f"LOCAL_WA_SESSION_TOKEN_{event.sender_id}"
-        qr = qrcode.QRCode(version=1, box_size=10, border=4)
-        qr.add_data(mock_auth_token)
-        qr.make(fit=True)
-        
-        img = qr.make_image(fill_color="black", back_color="white")
-        img_byte_arr = io.BytesIO()
-        img.save(img_byte_arr, format='PNG')
-        img_byte_arr.seek(0)
-        img_byte_arr.name = 'whatsapp_auth_qr.png'
-        
-        await status_msg.delete()
-        await client.send_file(
-            event.chat_id,
-            img_byte_arr,
-            caption=(
-                "📸 **Scan This QR Code Within 2 Minutes!**\n\n"
-                "👉 Open WhatsApp ➔ Linked Devices ➔ Link a Device.\n"
-                "📊 Status: Local slot active for session synchronization..."
-            )
-        )
-    except Exception as e:
-        logging.error(f"Internal QR Engine Error: {e}")
-        await event.respond("❌ Local port error: QR generate nahi ho saka.")
-
-# ⚡ 2. USER LOGIC: Direct 6-Digit WhatsApp OTP Filter Interceptor Engine
-async def check_internal_wa_otp(event, target_phone):
-    fetched_otp = None
-    try:
-        for attempt in range(10):
-            sample_inbox_text = "Your WhatsApp login verification code is: 456-123. Do not share it."
-            otp_match = re.search(r'\b\d{3}-\d{3}\b|\b\d{6}\b', sample_inbox_text)
-            if otp_match:
-                fetched_otp = otp_match.group(0).replace("-", "").strip()
-                break
-            await asyncio.sleep(2)
-    except Exception as e:
-        logging.error(f"Internal database checking intercept error: {e}")
-
-    if fetched_otp:
-        success_layout = (
-            f"✅ **WhatsApp OTP Received Successfully!**\n\n"
-            f"📞 **Number:** `{target_phone}`\n"
-            f"📩 **Direct Login Code:**  ⚡ `{fetched_otp}` ⚡\n\n"
-            f"👉 Is code ko copy karein aur use karein. Kisi panel ki zarurat nahi hai."
-        )
-        await event.edit(success_layout)
-    else:
-        recheck_kb = [[Button.inline("🔄 Re-Check OTP Again", data=f"checkwaotp:{target_phone}")]]
-        await event.edit(f"⏳ **OTP Not Arrived Yet!**\n\n📞 Phone: `{target_phone}`\n📊 Status: Monitoring live local events cache...", buttons=recheck_kb)
 
 async def main():
     await wa_bot.start(bot_token=BOT_TOKEN)

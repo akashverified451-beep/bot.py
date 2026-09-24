@@ -302,30 +302,10 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-    ## Admin WhatsApp Inventory Injector Command & Stock Validator
-    if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):
-        command_args = text.split(" ", 1)[1]
-        phone, country = [item.strip() for item in command_args.split(",")]
-        status_msg = await event.respond("⏳ **WhatsApp Stock entry processing...**")
-        
-        async with await get_db_connection() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "CREATE TABLE IF NOT EXISTS whatsapp_stock ("
-                    "id SERIAL PRIMARY KEY, "
-                    "phone_number TEXT UNIQUE, "
-                    "country_name TEXT, "
-                    "download_link TEXT, "
-                    "auth_key TEXT)"
-                )
-                await cursor.execute(
-                    "INSERT INTO whatsapp_stock (phone_number, country_name, download_link, auth_key) "
-                    "VALUES (%s, %s, %s, %s) ON CONFLICT (phone_number) DO NOTHING",
-                    (phone, country, "DIRECT_ENTRY", "DIRECT_ENTRY")
-                )
-                await conn.commit()
-
-        await status_msg.edit(f"💚 **WhatsApp Stock Registered Directly!**\n\n**Number:** `{phone}`\n**Country:** `{country}`")
+    ## Admin WhatsApp Inventory Injector Command - DIRECT TELEGRAM QR SCAN SYSTEM
+    if text.startswith("/addwa") and int(uid) == int(ADMIN_TELEGRAM_ID):
+        # Yeh command direct external whatsapp_bot logic se link hokar login QR create karegi
+        await generate_wa_qr_code(event, event.client)
         event.handled = True
         return
     

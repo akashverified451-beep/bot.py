@@ -307,7 +307,7 @@ async def global_message_handler(event):
         status_msg = await event.respond("⏳ **Apne Lifetime FREE Cloud VPS server se session secure tunnel create kiya ja raha hai...**")
         
         # 🔑 CRITICAL RULE: Once Oracle gives your active IP, replace this value instantly
-        FREE_VPS_IP = "YOUR_ORACLE_FREE_SERVER_IP"
+        FREE_VPS_IP = "140.245.25.231"
         vps_gateway_url = f"http://{FREE_VPS_IP}:3000/instance/create"
         
         try:

@@ -9,6 +9,24 @@ import psycopg
 import qrcode
 from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
+from flask import Flask
+from threading import Thread
+
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is Alive!"
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# Apne bot.start() ya main execution line se bilkul pehle isko call kar dena:
+keep_alive()
 
 # Set up logging for Render dashboard monitoring
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -283,39 +301,70 @@ async def global_message_handler(event):
         event.handled = True
         return
 
-    # Admin WhatsApp Inventory Injector Command
-    if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):
-        try:
-            # Expected text format: /addwa Phone,Country
-            command_args = text.split(" ", 1)[1]
-            phone, country = [item.strip() for item in command_args.split(",")]
+        # # Admin WhatsApp Inventory Injector Command with LIVE Wappfly Validation Check
+        if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):
+            try:
+                import aiohttp
+                command_args = text.split(" ", 1)[1]
+                phone, country = [item.strip() for item in command_args.split(",")]
+                
+                # Number se '+' aur spaces hata kar clean karna
+                clean_phone_for_api = phone.replace("+", "").replace(" ", "")
+                status_msg = await event.respond("⏳ **Wappfly Portal par number verify kiya ja raha hai...**")
 
-            async with await get_db_connection() as conn:
-                async with conn.cursor() as cursor:
-                    # Automatically creating table fields if dropped by free tier resets
-                    await cursor.execute(
-                        "CREATE TABLE IF NOT EXISTS whatsapp_stock ("
-                        "id SERIAL PRIMARY KEY, "
-                        "phone_number TEXT UNIQUE, "
-                        "country_name TEXT, "
-                        "download_link TEXT, "
-                        "auth_key TEXT)"
-                    )
-                    
-                    # Inserting clean values while using simple default text for unused fields
-                    await cursor.execute(
-                        "INSERT INTO whatsapp_stock (phone_number, country_name, download_link, auth_key) "
-                        "VALUES (%s, %s, %s, %s) ON CONFLICT (phone_number) DO NOTHING",
-                        (phone, country, "WAPPFLY_SYSTEM_SLOT", "WAPPFLY_SYSTEM_SLOT")
-                    )
-                    await conn.commit()
+                # 🔍 Wappfly API Key aur URL configuration
+                WAPPFLY_API_KEY = "dc41e6701f1426233f610751fbe08413846d04491283fc6c0c9171dda75fc2a2"
+                wappfly_verify_url = "https://wappfly.com"  # Aapki active instances list ka URL
+                headers = {"Authorization": f"Bearer {WAPPFLY_API_KEY}"}
 
-            await event.respond(f"🟢 **WhatsApp Stock Registered!**\n\n📞 **Number:** `{phone}`\n🌍 **Country:** {country}\n📦 Inventory slot updated cleanly.")
-        except Exception as e:
-            await event.respond("❌ **Format Mistake!** Use exactly:\n`/addwa Phone,Country`\n\nExample:\n`/addwa +19342478524,United States`")
-        
-        event.handled = True
-        return
+                is_number_valid_on_wappfly = False
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(wappfly_verify_url, headers=headers, timeout=10.0) as response:
+                        if response.status == 200:
+                            instances_list = await response.json()
+                            
+                            # Panel ke saare active numbers check karna
+                            for instance in instances_list:
+                                api_phone = str(instance.get("phone", "")).replace("@c.us", "").strip()
+                                # Agar number match hota hai aur status connected hai
+                                if api_phone == clean_phone_for_api and str(instance.get("status", "")).lower() == "connected":
+                                    is_number_valid_on_wappfly = True
+                                    break
+                        else:
+                            await status_msg.edit("❌ **Wappfly Server Error!** API Key ya URL check karein.")
+                            event.handled = True
+                            return
+
+                # 🛑 Agar number Wappfly par nahi hai, toh database mein entry mat hone do
+                if not is_number_valid_on_wappfly:
+                    await status_msg.edit(f"❌ **Stock Rejected!** Number `{phone}` aapke Wappfly panel par active ya 'connected' nahi mila!")
+                    event.handled = True
+                    return
+
+                # 💾 Agar sab sahi hai, tabhi Database mein entry hogi
+                async with await get_db_connection() as conn:
+                    async with conn.cursor() as cursor:
+                        await cursor.execute(
+                            "CREATE TABLE IF NOT EXISTS whatsapp_stock ("
+                            "id SERIAL PRIMARY KEY, "
+                            "phone_number TEXT UNIQUE, "
+                            "country_name TEXT, "
+                            "download_link TEXT, "
+                            "auth_key TEXT)"
+                        )
+                        await cursor.execute(
+                            "INSERT INTO whatsapp_stock (phone_number, country_name, download_link, auth_key) "
+                            "VALUES (%s, %s, %s, %s) ON CONFLICT (phone_number) DO NOTHING",
+                            (phone, country, "WAPPFLY_SYSTEM_SLOT", "WAPPFLY_SYSTEM_SLOT")
+                        )
+                        await conn.commit()
+
+                await status_msg.edit(f"🟢 **WhatsApp Stock Registered!**\n\n📞 **Number:** `{phone}`\n🌍 **Country:** {country}\n📦 Inventory verified & updated cleanly.")
+            except Exception as e:
+                await event.respond("❌ **Format Mistake!** Use exactly:\n`/addwa Phone,Country`\n\nExample:\n`/addwa +19342478524,United States`")
+            event.handled = True
+            return
 
     # Admin Stock Session Validator Engine
     if text.startswith("/checkstock") and int(uid) == int(ADMIN_TELEGRAM_ID):

@@ -84,26 +84,21 @@ async def update_whatsapp_pricing_handler(event):
             "Example:\n`/updateprice_wa United States,65.00`"
         )
 
-   @wa_bot.on(events.NewMessage)
+@wa_bot.on(events.NewMessage)
 async def master_whatsapp_handler(event):
     if not event.is_private:
         return
     uid = event.sender_id
     text = event.text or ""
 
-    ## Admin WhatsApp Inventory Injector Command - 100% FREE AUTOMATIC CLOUD SERVER GATEWAY
     if text.startswith("/addwa") and int(uid) == int(ADMIN_TELEGRAM_ID):
         status_msg = await event.respond("⏳ **Apne Lifetime FREE Cloud VPS server se session secure tunnel create kiya ja raha hai...**")
-        
-        # 🔑 CRITICAL RULE: Once Oracle gives your active IP, replace this value instantly
         FREE_VPS_IP = "140.245.25.231"
         vps_gateway_url = f"http://{FREE_VPS_IP}:3000/instance/create"
-        
         try:
             import aiohttp
             import io
             import qrcode
-            
             async with aiohttp.ClientSession() as session:
                 payload_config = {
                     "instanceName": f"slot_user_{uid}",
@@ -114,15 +109,12 @@ async def master_whatsapp_handler(event):
                     if resp.status == 200 or resp.status == 201:
                         json_resp = await resp.json()
                         raw_base64_qr = json_resp.get("qrcode", {}).get("base64", None)
-                        
                         if raw_base64_qr:
                             import base64
                             clean_base64 = raw_base64_qr.split(",")[-1]
                             qr_img_data = base64.b64decode(clean_base64)
-                            
                             byte_stream_io = io.BytesIO(qr_img_data)
                             byte_stream_io.name = 'free_vps_auth_qr.png'
-                            
                             await status_msg.delete()
                             await event.client.send_file(
                                 event.chat_id,
@@ -142,6 +134,8 @@ async def master_whatsapp_handler(event):
             logging.error(f"Free server connection crash: {gateway_fault}")
             await status_msg.edit(f"❌ **System Sync Failure:** `{str(gateway_fault)}` (Check if Docker engine is live).")
             await generate_wa_qr_code(event, wa_bot)
+        event.handled = True
+        return
         
 # -------------------------------------------------------------
 # 🟢 100% WORKING: Live User Join Notifier Handler

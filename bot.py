@@ -11,7 +11,6 @@ from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
 from flask import Flask
 from threading import Thread
-from whatsapp_bot import generate_wa_qr_code, check_internal_wa_otp
 
 app = Flask('')
 
@@ -33,7 +32,7 @@ keep_alive()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Load secure configuration states
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8865661759:AAEdZafGwuj6i5rTqDr8Q3oierIe0mD1piE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAHCLWkYRfAmfObQ0q76I87LWgJ8gKvlT8E")
 API_ID = int(os.getenv("API_ID", "33033843")) 
 API_HASH = os.getenv("API_HASH", "27d91aac298b61038f19ee5c1b1f3f48")
 
@@ -299,6 +298,149 @@ async def global_message_handler(event):
         except Exception as e:
             logging.error(f"Updateprice command error: {e}")
             await event.respond("❌ **System Error!** Check your command parameters and try again.")
+        event.handled = True
+        return
+
+        # # Admin WhatsApp Inventory Injector Command with LIVE Wappfly Validation Check
+        if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):
+            try:
+                import aiohttp
+                command_args = text.split(" ", 1)[1]
+                phone, country = [item.strip() for item in command_args.split(",")]
+                
+                # Number se '+' aur spaces hata kar clean karna
+                clean_phone_for_api = phone.replace("+", "").replace(" ", "")
+                status_msg = await event.respond("⏳ **Wappfly Portal par number verify kiya ja raha hai...**")
+
+                # 🔍 Wappfly API Key aur URL configuration
+                WAPPFLY_API_KEY = "dc41e6701f1426233f610751fbe08413846d04491283fc6c0c9171dda75fc2a2"
+                wappfly_verify_url = "https://wappfly.com"  # Aapki active instances list ka URL
+                headers = {"Authorization": f"Bearer {WAPPFLY_API_KEY}"}
+
+                is_number_valid_on_wappfly = False
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(wappfly_verify_url, headers=headers, timeout=10.0) as response:
+                        if response.status == 200:
+                            instances_list = await response.json()
+                            
+                            # Panel ke saare active numbers check karna
+                            for instance in instances_list:
+                                api_phone = str(instance.get("phone", "")).replace("@c.us", "").strip()
+                                # Agar number match hota hai aur status connected hai
+                                if api_phone == clean_phone_for_api and str(instance.get("status", "")).lower() == "connected":
+                                    is_number_valid_on_wappfly = True
+                                    break
+                        else:
+                            await status_msg.edit("❌ **Wappfly Server Error!** API Key ya URL check karein.")
+                            event.handled = True
+                            return
+
+                # 🛑 Agar number Wappfly par nahi hai, toh database mein entry mat hone do
+                if not is_number_valid_on_wappfly:
+                    await status_msg.edit(f"❌ **Stock Rejected!** Number `{phone}` aapke Wappfly panel par active ya 'connected' nahi mila!")
+                    event.handled = True
+                    return
+
+                # 💾 Agar sab sahi hai, tabhi Database mein entry hogi
+                async with await get_db_connection() as conn:
+                    async with conn.cursor() as cursor:
+                        await cursor.execute(
+                            "CREATE TABLE IF NOT EXISTS whatsapp_stock ("
+                            "id SERIAL PRIMARY KEY, "
+                            "phone_number TEXT UNIQUE, "
+                            "country_name TEXT, "
+                            "download_link TEXT, "
+                            "auth_key TEXT)"
+                        )
+                        await cursor.execute(
+                            "INSERT INTO whatsapp_stock (phone_number, country_name, download_link, auth_key) "
+                            "VALUES (%s, %s, %s, %s) ON CONFLICT (phone_number) DO NOTHING",
+                            (phone, country, "WAPPFLY_SYSTEM_SLOT", "WAPPFLY_SYSTEM_SLOT")
+                        )
+                        await conn.commit()
+
+                await status_msg.edit(f"🟢 **WhatsApp Stock Registered!**\n\n📞 **Number:** `{phone}`\n🌍 **Country:** {country}\n📦 Inventory verified & updated cleanly.")
+            except Exception as e:
+                await event.respond("❌ **Format Mistake!** Use exactly:\n`/addwa Phone,Country`\n\nExample:\n`/addwa +19342478524,United States`")
+            event.handled = True
+            return
+
+    # Admin Stock Session Validator Engine
+    if text.startswith("/checkstock") and int(uid) == int(ADMIN_TELEGRAM_ID):
+        try:
+            status_msg = await event.respond("🔍 **Scanning inventory database...**\nInitializing login handshakes for all stock...")
+            
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    # Pull all current available accounts
+                    await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts")
+                    all_stock = await cursor.fetchall()
+
+            if not all_stock:
+                await status_msg.edit("🛒 **Your stock inventory is completely empty!** nothing to validate.")
+                return
+
+            total_accounts = len(all_stock)
+            checked_count = 0
+            dead_count = 0
+            
+            from telethon.sessions import StringSession
+            
+            for phone, api_id, api_hash, session_str in all_stock:
+                checked_count += 1
+                is_alive = False
+                
+                # Periodically update the admin so you can see live progress
+                if checked_count % 2 == 0 or checked_count == total_accounts:
+                    await status_msg.edit(f"⚡ **Validating Stock:** `{checked_count}`/`{total_accounts}` accounts processed...")
+
+                try:
+                    # Setup temporary diagnostic client
+                    temp_check = TelegramClient(
+                        StringSession(str(session_str or "").strip()), 
+                        int(api_id), 
+                        str(api_hash or "").strip(),
+                        connection_retries=1,
+                        retry_delay=1,
+                        receive_updates=False
+                    )
+                    
+                    # Connect with a secure timeout window
+                    await asyncio.wait_for(temp_check.connect(), timeout=8.0)
+                    
+                    if await temp_check.is_user_authorized():
+                        is_alive = True
+                    
+                    await temp_check.disconnect()
+                    
+                except Exception as check_err:
+                    logging.error(f"Validation connectivity fault for {phone}: {check_err}")
+                    is_alive = False
+
+                # If the account session is dead or expired, wipe it from inventory instantly
+                if not is_alive:
+                    dead_count += 1
+                    async with await get_db_connection() as conn:
+                        async with conn.cursor() as cursor:
+                            await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone,))
+                            await conn.commit()
+
+            # Final summary report sent to Admin
+            live_count = total_accounts - dead_count
+            report_msg = (
+                f"📊 **Inventory Audit Completed!**\n\n"
+                f"📦 **Total Accounts Scanned:** `{total_accounts}`\n"
+                f"✅ **Active/Valid Sessions:** `{live_count}`\n"
+                f"🗑️ **Dead Sessions Deleted:** `{dead_count}`\n\n"
+                f"Your active storefront inventory has been cleaned and is safe for users."
+            )
+            await status_msg.edit(report_msg)
+
+        except Exception as global_audit_err:
+            logging.error(f"Global stock audit system crash: {global_audit_err}")
+            await event.respond("❌ **Critical breakdown inside inventory validator engine.**")
+            
         event.handled = True
         return
     
@@ -722,148 +864,137 @@ async def callback_handler(event):
         return
 
     # Country Button Click Selection Handler
-    elif data.startswith("checkwaotp:"):
-        _, target_phone = data.split(":")
-        await check_internal_wa_otp(event, target_phone)
-
     elif data.startswith("buy_tg_"):
         target_slug = data.replace("buy_tg_", "").strip()
         uid = event.sender_id
-
+        
         try:
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
                     # Fetch all raw stock matching available criteria
-                    await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM whatsapp_stock")
+                    await cursor.execute("SELECT phone_number, api_id, api_hash, string_session FROM available_accounts")
                     all_stock = await cursor.fetchall()
 
-            selected_account = None
-            custom_prices = await get_country_prices()
-            DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+                    selected_account = None
+                    custom_prices = await get_country_prices()
+                    DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
 
-            # Dynamic Prefix Lookup Arrays
-            prefix_to_country = {
-                "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh",
-                "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran",
-                "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya",
-                "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan"
-            }
-            canada_area_codes = ["204", "226", "249", "289", "306", "343", "365"]
+                    # Dynamic Prefix Lookup Arrays
+                    prefix_to_country = {
+                        "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
+                        "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
+                        "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
+                        "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
+                    }
+                    canada_area_codes = ["204", "226", "249", "289", "306", "343", "365", "403", "416", "418", "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "604", "613", "639", "647", "705", "709", "742", "778", "780", "782", "807", "819", "825", "867", "873", "902", "905"]
 
-            # Filter and match inventory profiles smoothly
-            for account in all_stock:
-                phone, api_id, api_hash, session_str = account
-                clean_phone = phone.strip()
-                if not clean_phone.startswith("+"):
-                    clean_phone = "+" + clean_phone
-
-                detected_country_name = "Other International"
-                if clean_phone.startswith("+1") and len(clean_phone) >= 5:
-                    detected_country_name = "Canada" if clean_phone[2:5] in canada_area_codes else "USA"
-                else:
-                    for prefix, country in prefix_to_country.items():
-                        if clean_phone.startswith(prefix):
-                            detected_country_name = country
+                    # Filter and match inventory profiles smoothly
+                    for account in all_stock:
+                        phone, api_id, api_hash, session_str = account
+                        clean_phone = phone.strip()
+                        if not clean_phone.startswith("+"):
+                            clean_phone = "+" + clean_phone
+                        
+                        detected_country_name = "Other International"
+                        if clean_phone.startswith("+1") and len(clean_phone) >= 5:
+                            detected_country_name = "Canada" if clean_phone[2:5] in canada_area_codes else "United States"
+                        else:
+                            for prefix, country in prefix_to_country.items():
+                                if clean_phone.startswith(prefix):
+                                    detected_country_name = country
+                                    break
+                        
+                        current_slug = detected_country_name.lower().replace(' ', '')[:15]
+                        if current_slug == target_slug:
+                            selected_account = (phone, api_id, api_hash, session_str, detected_country_name)
                             break
 
-                current_slug = detected_country_name.lower().replace(' ', '')[:15]
-                if current_slug == target_slug:
-                    selected_account = (phone, api_id, api_hash, session_str, detected_country_name)
-                    break
+                    if not selected_account:
+                        await event.respond("⚠️ **Out of Stock!** No available numbers match your requested country.")
+                        return
 
-            if not selected_account:
-                await event.respond("⚠️ **Out of Stock!** No available numbers match your selection.")
-                return
+                    # Unpack matched credential metrics safely
+                    phone_to_buy, api_id_to_buy, api_hash_to_buy, session_to_buy, detected_country_name = selected_account
+                    display_price = custom_prices.get(detected_country_name, DEFAULT_PRICE)
 
-        except Exception as handler_err:
-            logging.error(f"Error in callback processor: {handler_err}")
-            await event.respond("⚠️ **System Error occurred while processing request.**")
-            return
+                    # Verify transaction financial viability
+                    await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
+                    bal_row = await cursor.fetchone()
+                    user_bal = bal_row[0] if (bal_row and bal_row[0] is not None) else 0
 
-        # Unpack matched credential metrics safely
-        phone_to_buy, api_id_to_buy, api_hash_to_buy, session_to_buy, detected_country_name = selected_account
-        display_price = custom_prices.get(detected_country_name, DEFAULT_PRICE)
+                    if user_bal < display_price:
+                        await event.respond(f"❌ **Insufficient Funds!**\n\nThis account costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.")
+                        return
 
-        # Verify transaction financial viability
-        await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
-        bal_row = await cursor.fetchone()
-        user_bal = bal_row[0] if (bal_row and bal_row[0] is not None) else 0
+                    # Execute atomic purchase state transitions
+                    await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
+                    await cursor.execute("DELETE FROM available_accounts WHERE phone_number = %s", (phone_to_buy,))
+                    
+                    # Sanitize parameter items safely
+                    clean_session = str(session_to_buy or "").strip()
+                    clean_api_id = str(api_id_to_buy or "").strip()
+                    clean_api_hash = str(api_hash_to_buy or "").strip()
+                    
+                    # Pack dynamic database record config matching checkotp sequence
+                    bundled_meta = f"{clean_session}|{clean_api_id}|{clean_api_hash}"
+                    
+                    await cursor.execute(
+                        "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
+                        (phone_to_buy, uid, bundled_meta)
+                    )
+                    await conn.commit()
 
-        if user_bal < display_price:
-            await event.respond(f"❌ **Insufficient Funds!**\n\nThis account costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.")
-            return
-
-        # Execute atomic purchase state transitions
-        await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
-        await cursor.execute("DELETE FROM whatsapp_stock WHERE phone_number = %s", (phone_to_buy,))
-
-        # Sanitize parameter items safely
-        clean_session = str(session_to_buy or "").strip()
-        clean_api_id = str(api_id_to_buy or "").strip()
-        clean_api_hash = str(api_hash_to_buy or "").strip()
-
-        # Pack dynamic database record config matching checkotp sequence
-        bundled_meta = f"{clean_session}|{clean_api_id}|{clean_api_hash}"
-
-        await cursor.execute(
-            "INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)",
-            (phone_to_buy, uid, bundled_meta)
-        )
-        await conn.commit()
-
-        # Output success metrics outside the active database stream context
-        country_flags = {"Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦", "United States": "🇺🇸", "India": "🇮🇳"}
-        display_flag = country_flags.get(detected_country_name, "🌐")
-
-        success_msg = (
-            f"🎉 **Number Reserved Successfully!**\n\n"
-            f"📱 **Phone:** `{phone_to_buy}`\n"
-            f"🗺️ **Country:** {detected_country_name} {display_flag}\n"
-            f"💵 **Price:** ₹{display_price:.2f}\n\n"
-            f"⚡ **Note:** Your account reservation is active. Use the button below to check your live inbox."
-        )
-
-        from telethon import Button
-        recheck_kb = [[Button.inline("📥 Get OTP", data=f"checkotp:{phone_to_buy}")]]
-
-        try:
-            admin_alert = (
-                f"🔔 **New Account Sold!**\n\n"
-                f"👤 **User ID:** `{uid}`\n"
-                f"📱 **Phone:** `{phone_to_buy}`\n"
-                f"🗺️ **Country:** {detected_country_name}\n"
-                f"💰 **Price Earned:** ₹{display_price:.2f}"
+            # Output success metrics outside the active database stream context
+            country_flags = {"Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦", "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"}
+            display_flag = country_flags.get(detected_country_name, "🌍")
+            
+            success_msg = (
+                f"🎉 **Number Reserved Successfully!**\n\n"
+                f"📞 **Phone:** `{phone_to_buy}`\n"
+                f"🌍 **Country:** {detected_country_name} {display_flag}\n"
+                f"💵 **Price:** ₹{display_price:.2f}\n\n"
+                f"⚠️ **Note:** Your account reservation is active. Use the button below to check your live inbox."
             )
-            await event.client.send_message(int(ADMIN_TELEGRAM_ID), admin_alert)
-        except Exception as alert_err:
-            logging.error(f"Failed to send admin sale alert: {alert_err}")
+            
+            from telethon import Button
+            recheck_kb = [[Button.inline("🔄 Get OTP", data=f"checkotp:{phone_to_buy}")]]
+            
+            try:
+                admin_alert = (
+                    f"🛍️ **New Account Sold!**\n\n"
+                    f"👤 **User ID:** `{uid}`\n"
+                    f"📞 **Phone:** `{phone_to_buy}`\n"
+                    f"🌍 **Country:** {detected_country_name}\n"
+                    f"💵 **Price Earned:** ₹{display_price:.2f}"
+                )
+                await event.client.send_message(int(ADMIN_TELEGRAM_ID), admin_alert)
+            except Exception as alert_err:
+                import logging
+                logging.error(f"Failed sending admin sales notification: {alert_err}")
+          
+            await event.respond(success_msg, buttons=recheck_kb)
 
-        await event.respond(success_msg, buttons=recheck_kb)
-
-        try:
-            # Code structure placeholder to process purchase metrics safely
-            pass
         except Exception as e:
             import logging
             logging.error(f"Error during storefront purchase handler: {e}")
-            await event.respond("❌ **An error occurred while processing your selection request.**")
+            await event.respond("❌ An error occurred while processing your selection request.")
             return
 
     # # 2. Second Step: Extract stored data logs and execute instant validation hook
     elif data.startswith("checkotp:"):
         _, target_phone = data.split(":")
         target_phone = target_phone.strip()
-
-        await event.answer("🔍 Scanning account inbox instantly...", alert=False)
-
+        
+        await event.answer("🔄 Scanning account inbox instantly...", alert=False)
+        
         api_id_val = None
         api_hash_val = None
         session_str_val = None
-
+        
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute(
-                    "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s",
+                    "SELECT status FROM active_orders WHERE phone_number = %s AND uid = %s", 
                     (target_phone, uid)
                 )
                 row = await cursor.fetchone()
@@ -873,28 +1004,27 @@ async def callback_handler(event):
                     except ValueError:
                         pass
 
-        fetched_otp = "⚠️ NO LIVE SMS FOUND YET"
-        temp_client = None
+        fetched_otp = "⏳ NO LIVE SMS FOUND YET"
+        temp_client = None  # Initialize safely for finally block
 
         if session_str_val and api_id_val and api_hash_val:
             try:
                 from telethon.sessions import StringSession
-                import re
-
+                
                 temp_client = TelegramClient(
-                    StringSession(str(session_str_val).strip()),
-                    int(api_id_val),
-                    str(api_hash_val).strip(),
+                    StringSession(session_str_val), 
+                    int(api_id_val), 
+                    api_hash_val,
                     connection_retries=1,
                     retry_delay=1,
                     receive_updates=False # Performance boost: Ignores live background updates
                 )
-
+                
                 # Connect safely with a strict timeout
                 await asyncio.wait_for(temp_client.connect(), timeout=10.0)
-
+                
                 if await temp_client.is_user_authorized():
-                    # Loop 15 times (every 2 seconds) to wait up to 30 seconds for the OTP
+                    # 🔄 Loop 15 times (every 2 seconds) to wait up to 30 seconds for the OTP
                     for attempt in range(15):
                         async for msg in temp_client.iter_messages(777000, limit=1):
                             if msg.text:
@@ -904,68 +1034,68 @@ async def callback_handler(event):
                                     break
                                 else:
                                     fetched_otp = msg.text[:40]
-                        if fetched_otp != "⚠️ NO LIVE SMS FOUND YET":
+                        
+                        # If a code is found, build the layout text and update the screen instantly
+                        if fetched_otp and any(char.isdigit() for char in fetched_otp):
+                            # Self-contained variable defaults to prevent NameErrors inside the loop
+                            custom_prices = await get_country_prices()
+                            DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+                            country_flags = {"Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦", "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"}
+                            
+                            prefix_to_country = {"+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"}
+                            detected_country = "Other International"
+                            for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+                                if target_phone.startswith(prefix):
+                                    detected_country = prefix_to_country[prefix]
+                                    break
+                            
+                            custom_otp_message = (
+                                f"{country_flags.get(detected_country, '🌐')} **{detected_country}**   ₹{custom_prices.get(detected_country, DEFAULT_PRICE):.1f}   ✅\n\n"
+                                f"📞 **Phone Number:** `{target_phone}`\n"
+                                f"📩 **OTP:** **`{fetched_otp}`**\n\n"
+                                f"⚠️ **Note:** The Re-Request button is active for 24 hours."
+                            )
+                            from telethon import Button
+                            recheck_kb = [[Button.inline("🔄 Re-Check OTP", data=f"checkotp:{target_phone}")]]
+                            await event.edit(custom_otp_message, buttons=recheck_kb)
                             break
+                            
+                        # Wait 2 seconds before checking the inbox again
                         await asyncio.sleep(2)
-
-                # If a code is found, build the layout text and update the screen instantly
-                if fetched_otp and any(char.isdigit() for char in fetched_otp):
-                    custom_prices = await get_country_prices()
-                    DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
-                    country_flags = {"Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦", "United States": "🇺🇸", "India": "🇮🇳"}
-
-                    prefix_to_country = {"+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", "+91": "India"}
-                    detected_country = "Other International"
-                    for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-                        if target_phone.startswith(prefix):
-                            detected_country = prefix_to_country[prefix]
-                            break
-
-                    custom_otp_message = (
-                        f"{country_flags.get(detected_country, '🌐')} **{detected_country}** "
-                        f"**₹{custom_prices.get(detected_country, DEFAULT_PRICE)}**\n"
-                        f"📱 **Phone Number:** `{target_phone}`\n"
-                        f"💬 **OTP:** `{fetched_otp}`\n\n"
-                        f"🕒 **Note:** The Re-Request button is active for 24 hours."
-                    )
-                    from telethon import Button
-                    recheck_kb = [[Button.inline("🔄 Re-Check OTP", data=f"checkotp:{target_phone}")]]
-                    await event.edit(custom_otp_message, buttons=recheck_kb)
                 else:
-                    await event.respond(f"📩 **Latest secure message payload for `{target_phone}`:**\n\n`{fetched_otp}`")
-
-                await temp_client.disconnect()
-
-            except Exception as check_err:
-                logging.error(f"OTP check failed: {check_err}")
-                await event.respond("⚠️ **Failed to connect or fetch secure message stream context.**")
+                    fetched_otp = "❌ SESSION EXPIRED / TERMINATED"
+                    
+            except Exception as e:
+                logging.error(f"Instant Live Check Fault: {e}")
+                fetched_otp = "⏳ NO LIVE SMS FOUND YET"
+                
+            finally:
                 if temp_client:
-                    await temp_client.disconnect()
-        else:
-            await event.respond("⚠️ **Active order details not found or corrupted.**")
-        return
+                    # CRITICAL FIX: is_connected() requires await
+                    if await temp_client.is_connected():
+                        await temp_client.disconnect()
+
+        # Layout processing
+        custom_prices = await get_country_prices()
+        DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
         
-    # Layout processing
-    custom_prices = await get_country_prices()
-    DEFAULT_PRICE = custom_prices.get("DEFAULT", 53.39)
+        country_flags = {
+            "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
+            "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
+        }
+        
+        prefix_to_country = {
+            "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh", 
+            "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran", 
+            "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya", 
+            "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
+        }
 
-    country_flags = {
-        "Colombia": "🇨🇴", "Nigeria": "🇳🇬", "Bangladesh": "🇧🇩", "Canada": "🇨🇦",
-        "United States": "🇺🇸", "India": "🇮🇳", "Ethiopia": "🇪🇹"
-    }
-
-    prefix_to_country = {
-        "+57": "Colombia", "+234": "Nigeria", "+880": "Bangladesh",
-        "+91": "India", "+251": "Ethiopia", "+20": "Egypt", "+98": "Iran",
-        "+92": "Pakistan", "+62": "Indonesia", "+254": "Kenya",
-        "+56": "Chile", "+228": "Togo", "+244": "Angola", "+81": "Japan", "+977": "Nepal"
-    }
-
-    detected_country = "Other International"
-    for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
-        if target_phone.startswith(prefix):
-            detected_country = prefix_to_country[prefix]
-            break
+        detected_country = "Other International"
+        for prefix in sorted(prefix_to_country.keys(), key=len, reverse=True):
+            if target_phone.startswith(prefix):
+                detected_country = prefix_to_country[prefix]
+                break
 
         display_flag = country_flags.get(detected_country, "🌍")
         display_price = custom_prices.get(detected_country, DEFAULT_PRICE)

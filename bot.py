@@ -9,24 +9,6 @@ import psycopg
 import qrcode
 from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
-from flask import Flask
-from threading import Thread
-
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bot is Alive!"
-
-def run():
-    app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-# Apne bot.start() ya main execution line se bilkul pehle isko call kar dena:
-keep_alive()
 
 # Set up logging for Render dashboard monitoring
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -61,26 +43,14 @@ async def init_db():
                 await cursor.execute("CREATE TABLE IF NOT EXISTS claims (claim_id TEXT PRIMARY KEY, uid BIGINT, txn TEXT, session_amt INT DEFAULT 0)")
                 await cursor.execute("CREATE TABLE IF NOT EXISTS active_orders (phone_number TEXT, uid BIGINT, status TEXT)")
                 await cursor.execute("CREATE TABLE IF NOT EXISTS available_accounts (phone_number TEXT PRIMARY KEY, api_id TEXT, api_hash TEXT, string_session TEXT)")
-                
-                # Drop the old table layout if it exists to clear structure conflicts
-                await cursor.execute("DROP TABLE IF EXISTS country_prices CASCADE;")
-                
-                # Recreate the table supporting isolated platform profiles
-                await cursor.execute("""
-                    CREATE TABLE country_prices (
-                        country TEXT,
-                        service_type TEXT,
-                        price NUMERIC,
-                        PRIMARY KEY (country, service_type)
-                    )
-                """)
+                await cursor.execute("CREATE TABLE IF NOT EXISTS country_prices (country TEXT PRIMARY KEY, price NUMERIC)")
                 await conn.commit()
         logging.info("PostgreSQL structural database tables checked/created successfully.")
     except Exception as e:
         logging.error(f"Error initializing database: {e}")
 
-async def get_country_prices(service_type="Telegram"):
-    """Fetches real-time custom pricing from the database filtered by app category."""
+async def get_country_prices():
+    """Fetches real-time custom pricing from the database with hardcoded defaults as fallbacks."""
     defaults = {
         "Colombia": 36.23, "Nigeria": 36.23, "Bangladesh": 40.04,
         "Canada": 40.04, "United States": 41.00, "India": 41.00, "Ethiopia": 41.00,
@@ -89,15 +59,12 @@ async def get_country_prices(service_type="Telegram"):
     try:
         async with await get_db_connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "SELECT country, price FROM country_prices WHERE LOWER(service_type) = LOWER(%s)",
-                    (service_type,)
-                )
+                await cursor.execute("SELECT country, price FROM country_prices")
                 rows = await cursor.fetchall()
                 for country, price in rows:
                     defaults[country.strip()] = float(price)
     except Exception as e:
-        logging.error(f"Error fetching dynamic prices for {service_type}: {e}")
+        logging.error(f"Error fetching dynamic prices: {e}")
     return defaults
 
 async def get_user_bal(uid):
@@ -262,112 +229,77 @@ async def global_message_handler(event):
     if (text.startswith("/updateprice") or text.startswith("/updatestock")) and int(uid) == int(ADMIN_TELEGRAM_ID):
         try:
             if "," not in text:
-                await event.respond("❌ **Format Error!** Use:\n`/updateprice [tg/wa],CountryName,Price`\n\nExample:\n`/updateprice tg,India,45`\n`/updateprice wa,India,60`")
+                await event.respond("❌ **Format Error!** Use:\n`/updateprice CountryName,Price`\n\nExample: `/updateprice India,48`")
                 event.handled = True
                 return
-                
+
             command_args = text.split(" ", 1)[1]
-            service_param, country_param, price_param = command_args.split(",")
-            
-            # Detect whether admin typed 'tg' or 'wa' and convert to formal labels
-            service_input = service_param.strip().lower()
-            service_target = "Telegram" if service_input == "tg" else "WhatsApp" if service_input == "wa" else None
-            
-            if not service_target:
-                await event.respond("❌ **Invalid Service Type!** Use `tg` for Telegram or `wa` for WhatsApp.")
-                return
-                
+            country_param, price_param = command_args.split(",")
+
             target_country = country_param.strip()
             new_price = float(price_param.strip())
-            
+
             async with await get_db_connection() as conn:
                 async with conn.cursor() as cursor:
-                    # Insert or update price matching the specific application channel cleanly
-                    await cursor.execute("""
-                        INSERT INTO country_prices (country, service_type, price) 
-                        VALUES (%s, %s, %s) 
-                        ON CONFLICT (country, service_type) 
-                        DO UPDATE SET price = EXCLUDED.price
-                    """, (target_country, service_target, new_price))
+                    # Automatically ensure table exists to prevent silent query crashes
+                    await cursor.execute(
+                        "CREATE TABLE IF NOT EXISTS country_prices ("
+                        "country TEXT PRIMARY KEY, price REAL)"
+                    )
+                    await cursor.execute(
+                        "INSERT INTO country_prices (country, price) VALUES (%s, %s) "
+                        "ON CONFLICT (country) DO UPDATE SET price = EXCLUDED.price",
+                        (target_country, new_price)
+                    )
                     await conn.commit()
-                    
+
             await event.respond(
                 f"💰 **Live Price Updated!**\n\n"
-                f"🤖 **Service:** {service_target}\n"
                 f"🌍 **Country:** {target_country}\n"
                 f"💵 **New Price:** ₹{new_price:.2f}\n\n"
-                f"Storefront selections updated instantly."
+                f"All storefront selections will use this price instantly."
             )
         except Exception as e:
+            import logging
             logging.error(f"Updateprice command error: {e}")
             await event.respond("❌ **System Error!** Check your command parameters and try again.")
+        
         event.handled = True
         return
+   
+    # Admin WhatsApp Inventory Injector Command
+    if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):
+        try:
+            # Expected text format: /addwa Phone,Country
+            command_args = text.split(" ", 1)[1]
+            phone, country = [item.strip() for item in command_args.split(",")]
 
-        # # Admin WhatsApp Inventory Injector Command with LIVE Wappfly Validation Check
-        if text.startswith("/addwa ") and int(uid) == int(ADMIN_TELEGRAM_ID):
-            try:
-                import aiohttp
-                command_args = text.split(" ", 1)[1]
-                phone, country = [item.strip() for item in command_args.split(",")]
-                
-                # Number se '+' aur spaces hata kar clean karna
-                clean_phone_for_api = phone.replace("+", "").replace(" ", "")
-                status_msg = await event.respond("⏳ **Wappfly Portal par number verify kiya ja raha hai...**")
+            async with await get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    # Automatically creating table fields if dropped by free tier resets
+                    await cursor.execute(
+                        "CREATE TABLE IF NOT EXISTS whatsapp_stock ("
+                        "id SERIAL PRIMARY KEY, "
+                        "phone_number TEXT UNIQUE, "
+                        "country_name TEXT, "
+                        "download_link TEXT, "
+                        "auth_key TEXT)"
+                    )
+                    
+                    # Inserting clean values while using simple default text for unused fields
+                    await cursor.execute(
+                        "INSERT INTO whatsapp_stock (phone_number, country_name, download_link, auth_key) "
+                        "VALUES (%s, %s, %s, %s) ON CONFLICT (phone_number) DO NOTHING",
+                        (phone, country, "WAPPFLY_SYSTEM_SLOT", "WAPPFLY_SYSTEM_SLOT")
+                    )
+                    await conn.commit()
 
-                # 🔍 Wappfly API Key aur URL configuration
-                WAPPFLY_API_KEY = "dc41e6701f1426233f610751fbe08413846d04491283fc6c0c9171dda75fc2a2"
-                wappfly_verify_url = "https://wappfly.com"  # Aapki active instances list ka URL
-                headers = {"Authorization": f"Bearer {WAPPFLY_API_KEY}"}
-
-                is_number_valid_on_wappfly = False
-
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(wappfly_verify_url, headers=headers, timeout=10.0) as response:
-                        if response.status == 200:
-                            instances_list = await response.json()
-                            
-                            # Panel ke saare active numbers check karna
-                            for instance in instances_list:
-                                api_phone = str(instance.get("phone", "")).replace("@c.us", "").strip()
-                                # Agar number match hota hai aur status connected hai
-                                if api_phone == clean_phone_for_api and str(instance.get("status", "")).lower() == "connected":
-                                    is_number_valid_on_wappfly = True
-                                    break
-                        else:
-                            await status_msg.edit("❌ **Wappfly Server Error!** API Key ya URL check karein.")
-                            event.handled = True
-                            return
-
-                # 🛑 Agar number Wappfly par nahi hai, toh database mein entry mat hone do
-                if not is_number_valid_on_wappfly:
-                    await status_msg.edit(f"❌ **Stock Rejected!** Number `{phone}` aapke Wappfly panel par active ya 'connected' nahi mila!")
-                    event.handled = True
-                    return
-
-                # 💾 Agar sab sahi hai, tabhi Database mein entry hogi
-                async with await get_db_connection() as conn:
-                    async with conn.cursor() as cursor:
-                        await cursor.execute(
-                            "CREATE TABLE IF NOT EXISTS whatsapp_stock ("
-                            "id SERIAL PRIMARY KEY, "
-                            "phone_number TEXT UNIQUE, "
-                            "country_name TEXT, "
-                            "download_link TEXT, "
-                            "auth_key TEXT)"
-                        )
-                        await cursor.execute(
-                            "INSERT INTO whatsapp_stock (phone_number, country_name, download_link, auth_key) "
-                            "VALUES (%s, %s, %s, %s) ON CONFLICT (phone_number) DO NOTHING",
-                            (phone, country, "WAPPFLY_SYSTEM_SLOT", "WAPPFLY_SYSTEM_SLOT")
-                        )
-                        await conn.commit()
-
-                await status_msg.edit(f"🟢 **WhatsApp Stock Registered!**\n\n📞 **Number:** `{phone}`\n🌍 **Country:** {country}\n📦 Inventory verified & updated cleanly.")
-            except Exception as e:
-                await event.respond("❌ **Format Mistake!** Use exactly:\n`/addwa Phone,Country`\n\nExample:\n`/addwa +19342478524,United States`")
-            event.handled = True
-            return
+            await event.respond(f"🟢 **WhatsApp Stock Registered!**\n\n📞 **Number:** `{phone}`\n🌍 **Country:** {country}\n📦 Inventory slot updated cleanly.")
+        except Exception as e:
+            await event.respond("❌ **Format Mistake!** Use exactly:\n`/addwa Phone,Country`\n\nExample:\n`/addwa +19342478524,United States`")
+        
+        event.handled = True
+        return
 
     # Admin Stock Session Validator Engine
     if text.startswith("/checkstock") and int(uid) == int(ADMIN_TELEGRAM_ID):

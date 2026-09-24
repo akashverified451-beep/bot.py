@@ -14,7 +14,7 @@ from telethon.sessions import StringSession
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Load secure configuration states
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8761162220:AAHCLWkYRfAmfObQ0q76I87LWgJ8gKvlT8E")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8865661759:AAEdZafGwuj6i5rTqDr8Q3oierIe0mD1piE")
 API_ID = int(os.getenv("API_ID", "33033843")) 
 API_HASH = os.getenv("API_HASH", "27d91aac298b61038f19ee5c1b1f3f48")
 

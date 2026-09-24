@@ -42,6 +42,9 @@ YOUR_UPI_ID = "skyotpprovider@axisbank"
 # Database Connection URL
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://sky_otp_db_user:oYom3EdpOfLCpLSGlc2dAV8qY9zw2oot@dpg-d98lkf5aeets73f2po2g-a/sky_otp_db")
 
+# Ye line automatic folder bana degi agar wo nahi hoga toh
+os.makedirs("session_data", exist_ok=True)
+
 # Initialize Telethon Bot Client Instance using your storage disk path
 bot = TelegramClient("session_data/session", API_ID, API_HASH)
 

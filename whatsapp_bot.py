@@ -134,9 +134,7 @@ async def update_whatsapp_pricing_handler(event):
             import logging
             logging.error(f"Free server connection crash: {gateway_fault}")
             await status_msg.edit(f"❌ **System Sync Failure:** `{str(gateway_fault)}` (Check if Docker engine is live).")
-            
-        event.handled = True
-        return
+            await generate_wa_qr_code(event, wa_bot)
         
 # -------------------------------------------------------------
 # 🟢 100% WORKING: Live User Join Notifier Handler

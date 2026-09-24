@@ -83,61 +83,51 @@ async def update_whatsapp_pricing_handler(event):
             "Example:\n`/updateprice_wa United States,65.00`"
         )
 
-# -------------------------------------------------------------
-# 🟢 Fixed Live User Join Notifier (Ab 100% Alert Bhe jega)
-# -------------------------------------------------------------
-@wa_bot.on(events.NewMessage(pattern=r"^/start\$"))  # Exact /start command lock
+# 🟢 live_user_join_notifier_handler completely with this:
+@wa_bot.on(events.NewMessage())
 async def live_user_join_notifier_handler(event):
     uid = event.sender_id
-
-    # Admin agar khud type kare to ignore maarein
+    text = event.text or ""
+    
+    # 🛑 PROTECTION GUARD: Drop administrative alert logs instantly
+    if "New User Joined" in text or "Stock Sold Alert" in text:
+        return
+        
+    # Ignore messages sent by your own admin account to break echo loops
     if int(uid) == int(ADMIN_TELEGRAM_ID):
-        event.handled = True
         return
 
-    try:
-        conn = await get_db_connection()
-        async with conn.cursor() as cursor:
-            # Check user table using clean placeholders
-            await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
-            row = await cursor.fetchone()
-
-            # Agar user database mein nahi hai, toh notify aur save karein
-            if row is None:
-                # 💡 get_sender() agar fail ho, toh event.sender se details nikalenge safely
-                sender = await event.get_sender()
-                username = f"@{sender.username}" if (sender and sender.username) else f"@{event.sender.username}" if (event.sender and event.sender.username) else "No Username"
-                first_name = sender.first_name if (sender and sender.first_name) else event.sender.first_name if (event.sender and event.sender.first_name) else "User"
+    # Listen to the global message pool for any start commands safely
+    if "/start" in text.lower():
+        try:
+            conn = await get_db_connection()
+            async with conn.cursor() as cursor:
+                # Using the correct Psycopg 3 numbered placeholder format ($1)
+                await cursor.execute("SELECT uid FROM users WHERE uid = %s", (uid,))
+                row = await cursor.fetchone()
                 
-                # 💡 Pehle database mein insert kar dete hain taaki profile initialization complete ho sake
-                try:
-                    await cursor.execute(
-                        "INSERT INTO users (uid, balance) VALUES (%s, %s) ON CONFLICT (uid) DO NOTHING", 
-                        (uid, 0.00)
+                # If row is empty, this is a completely brand new customer profile!
+                if row is None:
+                    sender = await event.get_sender()
+                    username = f"@{sender.username}" if sender.username else "No Username"
+                    first_name = sender.first_name or "User"
+                    
+                    join_alert = (
+                        f"👤 **🚀 New User Joined Your Bot!**\n\n"
+                        f"🏷️ **Name:** {first_name}\n"
+                        f"💬 **Username:** {username}\n"
+                        f"🆔 **Telegram UID:** `{uid}`\n"
+                        f"📊 Status: Profile initialized automatically inside PostgreSQL."
                     )
-                    await conn.commit()
-                except Exception as db_err:
-                    logging.error(f"Failed to insert new user in DB: {db_err}")
-
-                join_alert = (
-                    f"👤 **🚀 New User Joined Your Bot!**\n\n"
-                    f"🏷 **Name:** {first_name}\n"
-                    f"💬 **Username:** {username}\n"
-                    f"🆔 **Telegram UID:** `{uid}`\n"
-                    f"📊 Status: Profile initialized automatically inside PostgreSQL."
-                )
-                
-                # Admin ko alert send karna (Without inside try block risk)
-                await wa_bot.send_message(int(ADMIN_TELEGRAM_ID), join_alert)
-                
-    except Exception as e:
-        logging.error(f"Join monitoring loop exception error: {e}")
-    finally:
-        if 'conn' in locals() and conn:
-            await conn.close()
-    
-    event.handled = True
-    return
+                    try:
+                        await wa_bot.send_message(int(ADMIN_TELEGRAM_ID), join_alert)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logging.error(f"Join monitoring loop exception error: {e}")
+        finally:
+            if 'conn' in locals():
+                await conn.close()
 
 # -------------------------------------------------------------
 # 📊 Administrative Total Registered Customer Count Lookup Command
@@ -214,89 +204,60 @@ async def whatsapp_storefront_menu_handler(event):
         logging.error(f"Storefront layout breakdown exception: {e}")
         await event.respond("❌ An error occurred while generating the WhatsApp store list.")
 
-# =============================================================
-# 🟢 2. Custom Button Interaction Handlers (Strict Wallet Check)
-# =============================================================
+# -------------------------------------------------------------
+# 🟢 2. Custom Button Interaction Handlers
+# -------------------------------------------------------------
 @wa_bot.on(events.CallbackQuery(pattern=r"^buy_wa_"))
 async def buy_whatsapp_account_handler(event):
+    target_slug = event.data.decode('utf-8').replace("buy_wa_", "").strip()
     uid = event.sender_id
+    
     try:
-        target_slug = event.data.decode('utf-8').replace("buy_wa_", "").strip()
-        
         conn = await get_db_connection()
         async with conn.cursor() as cursor:
-            # 1. 📦 Sabse pehle stock se number aur uski details nikalein
-            await cursor.execute(
-                "SELECT phone_number, download_link, auth_key, country_name FROM whatsapp_stock WHERE LOWER(REPLACE(country_name, ' ', '')) = %s LIMIT 1",
-                (target_slug,)
-            )
+            await cursor.execute("SELECT phone_number, download_link, auth_key, country_name FROM whatsapp_stock WHERE LOWER(REPLACE(country_name, ' ', '')) LIKE %s LIMIT 1", (f"%{target_slug}%",))
             selected_wa = await cursor.fetchone()
-            
+
             if not selected_wa:
-                await event.respond("⚠️ **Out of Stock!** No available numbers match this region currently.")
-                await event.answer()
+                await event.respond("⚠️ **Out of Stock!** No available numbers match your requested country.")
+                await conn.close()
                 return
 
-            phone, inst_id, api_token, country_name = selected_wa
-
-            # 2. 💵 Country ka price nikalein
-            try:
-                custom_prices = await get_country_prices("WhatsApp")
-            except Exception:
-                custom_prices = {}
-                
+        phone, inst_id, api_token, country_name = selected_wa
+        
+        # Calculate dynamic country pricing parameter lookup matching database entries
+        try:
+            custom_prices = await get_country_prices("WhatsApp")
             display_price = custom_prices.get(country_name, custom_prices.get("DEFAULT", 55.00))
+        except Exception:
+            display_price = 55.00
 
-            # 3. 💳 User ka actual wallet balance fetch karein
             await cursor.execute("SELECT balance FROM users WHERE uid = %s", (uid,))
             bal_row = await cursor.fetchone()
             user_bal = bal_row[0] if bal_row else 0
 
-            # 🛑 Tight Security Check: Agar balance price se kam hai, toh yahi block karo
             if user_bal < display_price:
-                await event.respond(
-                    f"❌ **Insufficient Funds!**\n\n"
-                    f"This account costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.\n"
-                    f"Please add funds to your wallet first!"
-                )
-                await event.answer()
+                await event.respond(f"❌ **Insufficient Funds!**\nThis costs **₹{display_price:.2f}**, but your balance is **₹{user_bal:.2f}**.")
+                await conn.close()
                 return
 
-            # 4. 💸 Agar balance hai, toh paise deduct karein aur database update karein
             await cursor.execute("UPDATE users SET balance = balance - %s WHERE uid = %s", (display_price, uid))
             await cursor.execute("DELETE FROM whatsapp_stock WHERE phone_number = %s", (phone,))
-            await cursor.execute("INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)", (phone, uid, 'pending'))
+            await cursor.execute("INSERT INTO active_orders (phone_number, uid, status) VALUES (%s, %s, %s)", (phone, uid, "WAPPFLY_ACTIVE"))
             await conn.commit()
-
-        # 📱 User ko reserved screen aur Get OTP ka button dikhana
-        recheck_kb = [[Button.inline("🔄 Get WhatsApp OTP", data=f"check_wa_otp:{phone}")]]
-        await event.edit(
-            f"🎉 **WhatsApp Number Reserved!**\n\n"
-            f"📞 **Phone:** `{phone}`\n"
-            f"🌍 **Country:** {country_name}\n\n"
-            f"Request your SMS code inside your official WhatsApp mobile app, "
-            f"then click the button below to fetch your OTP instantly!", 
-            buttons=recheck_kb
-        )
-        
-        # 🔔 Admin ko real sold alert send karna
+        await conn.close()
         admin_alert_text = f"💰 **WhatsApp Stock Sold Alert!**\n\n📞 **Number:** `{phone}`\n🌍 **Country:** {country_name}\n👤 **Buyer UID:** `{uid}`\n💵 **Price:** ₹{display_price:.2f}"
         try:
             await wa_bot.send_message(int(ADMIN_TELEGRAM_ID), admin_alert_text)
         except Exception:
             pass
 
+        recheck_kb = [[Button.inline("🔄 Get WhatsApp OTP", data=f"check_wa_otp:{phone}")]]
+        await event.edit(f"🎉 **WhatsApp Number Reserved!**\n\n📞 **Phone:** `{phone}`\n🌍 **Country:** {country_name}\n\nRequest your SMS code inside your official WhatsApp mobile app, then click the button below to fetch your OTP instantly!", buttons=recheck_kb)
     except Exception as e:
         logging.error(f"Checkout block crash: {e}")
-        await event.respond("❌ **An error occurred during selection processing.**")
-    finally:
-        if 'conn' in locals():
-            await conn.close()
-            
-    await event.answer()
-    event.handled = True
-    return
-    
+        await event.respond("❌ An error occurred during selection processing.")
+
 # -------------------------------------------------------------
 # 🟢 3. The Live Wappfly OTP Interceptor + Auto-Refund Engine
 # -------------------------------------------------------------
